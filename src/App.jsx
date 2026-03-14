@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-cconst ANTHROPIC_KEY = "paste-your-key-here";
+const ANTHROPIC_KEY = "paste-your-key-here";
 
 
 /* ─── DESIGN SYSTEM ───────────────────────────────────────────────
