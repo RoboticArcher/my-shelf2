@@ -467,16 +467,19 @@ function ScanModal({ onClose, onAdd }) {
       const data = await res.json();
       const text = data.content?.[0]?.text || "";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const fetchCover = async (title, author) => {
+        const search = async (q) => {
+          const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i`);
+          const d = await r.json();
+          return d.docs?.find(doc => doc.cover_i)?.cover_i ?? null;
+        };
+        const cover_i = (await search(`${title} ${author}`)) ?? (await search(title));
+        return cover_i ? `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg` : null;
+      };
       const now = Date.now();
       const withCovers = await Promise.all(parsed.books.map(async (b, i) => {
         let cover = null;
-        try {
-          const q = encodeURIComponent(`${b.title} ${b.author}`);
-          const r = await fetch(`https://openlibrary.org/search.json?q=${q}&limit=1&fields=cover_i`);
-          const d = await r.json();
-          const cover_i = d.docs?.[0]?.cover_i;
-          if (cover_i) cover = `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg`;
-        } catch {}
+        try { cover = await fetchCover(b.title, b.author); } catch {}
         return { ...b, id: now + i, include: true, cover };
       }));
       setFound(withCovers);
@@ -541,13 +544,17 @@ function ScanModal({ onClose, onAdd }) {
             <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 16 }}>Found <strong>{found.length} books</strong>. Uncheck any that are wrong, then add them all at once.</div>
             <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
               {found.map((b, i) => (
-                <div key={i} onClick={() => toggle(i)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: b.include ? "var(--cyan-dim)" : "var(--bg)", border: `1.5px solid ${b.include ? "var(--cyan-mid)" : "var(--border)"}`, borderRadius: 6, cursor: "pointer", transition: "all 0.15s" }}>
+                <div key={i} onClick={() => toggle(i)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: b.include ? "var(--cyan-dim)" : "var(--bg)", border: `1.5px solid ${b.include ? "var(--cyan-mid)" : "var(--border)"}`, borderRadius: 6, cursor: "pointer", transition: "all 0.15s", minHeight: 68 }}>
                   <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${b.include ? "var(--cyan)" : "var(--border2)"}`, background: b.include ? "var(--cyan)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     {b.include && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
                   </div>
-                  <div>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)" }}>{b.title}</div>
-                    <div style={{ fontSize: 11, color: "var(--ink3)" }}>{b.author}</div>
+                  <div style={{ width: 32, height: 46, flexShrink: 0, borderRadius: 3, overflow: "hidden", background: "var(--border)", border: "1px solid var(--border2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
+                    {b.cover ? <img src={b.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{b.author || "Unknown"}</div>
+                    <div style={{ fontSize: 10, color: "var(--cyan)", fontWeight: 600, marginTop: 3, letterSpacing: "0.06em" }}>{b.genre || "General"}</div>
                   </div>
                 </div>
               ))}
