@@ -259,7 +259,12 @@ function AddModal({ onClose, onAdd }) {
 }
 
 // ── DETAIL MODAL ───────────────────────────────────────────────────
-function DetailModal({ book, onClose }) {
+function DetailModal({ book, onClose, onUpdate }) {
+  const [rating, setRating] = useState(book.rating);
+  const [notes, setNotes] = useState(book.notes || "");
+
+  const save = () => { onUpdate({ ...book, rating, notes }); onClose(); };
+
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -270,7 +275,7 @@ function DetailModal({ book, onClose }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "var(--ink)", marginBottom: 4, lineHeight: 1.3 }}>{book.title}</div>
             <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 12 }}>{book.author}</div>
-            <Stars rating={book.rating} />
+            <Stars rating={rating} interactive onChange={setRating} />
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
               {[book.genre, book.pages && `${book.pages}pp`, book.dateRead].filter(Boolean).map((t,i) => (
                 <span key={i} style={{ fontSize: 10, padding: "2px 9px", background: "var(--cyan-dim)", color: "var(--cyan)", borderRadius: 3, fontWeight: 600, letterSpacing: "0.06em" }}>{t}</span>
@@ -278,13 +283,14 @@ function DetailModal({ book, onClose }) {
             </div>
           </div>
         </div>
-        {book.notes && (
-          <div style={{ background: "var(--bg)", border: "1.5px solid var(--border)", borderLeft: "3px solid var(--cyan)", borderRadius: "0 6px 6px 0", padding: 16 }}>
-            <div style={{ fontSize: 10, color: "var(--ink4)", letterSpacing: "0.12em", marginBottom: 8, textTransform: "uppercase", fontWeight: 600 }}>Your Notes</div>
-            <div style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.8, fontStyle: "italic" }}>{book.notes}</div>
-          </div>
-        )}
-        <button className="btn-ghost" style={{ width: "100%", marginTop: 20, padding: "10px 0" }} onClick={onClose}>Close</button>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Add your notes…"
+          style={{ width: "100%", minHeight: 90, background: "var(--bg)", border: "1.5px solid var(--border)", borderLeft: "3px solid var(--cyan)", borderRadius: "0 6px 6px 0", padding: 12, fontSize: 13, color: "var(--ink2)", fontFamily: "'JetBrains Mono', monospace", resize: "vertical", outline: "none", lineHeight: 1.8, boxSizing: "border-box" }}
+        />
+        <button className="btn-primary" style={{ width: "100%", marginTop: 12, padding: "10px 0" }} onClick={save}>Save</button>
+        <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>Close</button>
       </div>
     </div>
   );
@@ -427,7 +433,7 @@ function ScanModal({ onClose, onAdd }) {
           model: "claude-sonnet-4-20250514", max_tokens: 1000,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageData } },
-            { type: "text", text: `Look at this bookshelf photo. Identify every book you can read from the spines. Respond ONLY with valid JSON (no markdown):\n{\n  "books": [\n    { "title": "...", "author": "..." }\n  ]\n}` }
+            { type: "text", text: `Look at this bookshelf photo. Identify every book you can read from the spines. For each book provide the title and author — if the author isn't visible on the spine, use your knowledge to fill it in from the title. Only use "Unknown" if you genuinely cannot determine the author. Respond ONLY with valid JSON (no markdown):\n{\n  "books": [\n    { "title": "...", "author": "..." }\n  ]\n}` }
           ]}]
         })
       });
@@ -689,7 +695,7 @@ export default function App() {
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
       {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} />}
       {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
-      {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} />}
+      {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
     </>
   );
 }
