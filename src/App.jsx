@@ -700,7 +700,7 @@ function BookSearchInput({ value, onChange }) {
   const clear = () => { setQuery(""); setResults([]); onChange({ title: "", author: "" }); };
 
   return (
-    <div style={{ position: "relative", flex: 1 }}>
+    <div style={{ flex: 1 }}>
       <div style={{ position: "relative" }}>
         <input
           className="input"
@@ -718,7 +718,7 @@ function BookSearchInput({ value, onChange }) {
         <div style={{ fontSize: 10, color: "var(--ink3)", padding: "3px 2px" }}>by {value.author}</div>
       )}
       {results.length > 0 && (
-        <div className="autocomplete" style={{ position: "absolute", zIndex: 200, width: "100%", top: "100%" }}>
+        <div className="autocomplete" style={{ marginBottom: 0 }}>
           {results.map((r, i) => (
             <div key={i} className="ac-item" onClick={() => select(r)}>
               <div className="ac-title">{r.title}</div>
