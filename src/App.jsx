@@ -142,6 +142,22 @@ const CSS = `
   .tier-bar-wrap { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 18px 22px; margin-top: 16px; }
   .tier-progress { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin-top: 10px; }
   .tier-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
+
+  .year-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+  .year-btn { background: none; border: 1.5px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 5px 12px; cursor: pointer; color: var(--ink3); transition: all 0.15s; text-transform: uppercase; }
+  .year-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  .year-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+  .toread-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .toread-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: all 0.18s; }
+  .toread-card:hover { border-color: var(--cyan-mid); box-shadow: 0 4px 16px rgba(0,180,216,0.1); }
+  .toread-cover { width: 100%; height: 120px; border-radius: 6px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 36px; }
+  .toread-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .toread-remove { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--ink4); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 5px; border-radius: 3px; }
+  .toread-remove:hover { color: var(--red); background: #fef2f2; }
+
+  .import-drop { border: 2px dashed var(--border2); border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; margin-bottom: 16px; transition: border-color 0.15s; }
+  .import-drop:hover { border-color: var(--cyan); }
 `;
 
 // ── GENRE HELPER ───────────────────────────────────────────────────
@@ -219,16 +235,17 @@ function BookCard({ book, onClick, onDelete, onRate }) {
 }
 
 // ── ADD BOOK MODAL ─────────────────────────────────────────────────
-function AddModal({ onClose, onAdd }) {
-  const [query, setQuery] = useState("");
+function AddModal({ onClose, onAdd, prefill }) {
+  const [query, setQuery] = useState(prefill?.title || "");
   const [results, setResults] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(prefill ? { title: prefill.title, author_name: [prefill.author], cover_i: null, _prefillCover: prefill.cover } : null);
   const [rating, setRating] = useState(0);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const timer = useRef();
 
   useEffect(() => {
+    if (prefill) return; // skip search when prefilled
     if (!query || query.length < 2) { setResults([]); return; }
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
@@ -246,22 +263,37 @@ function AddModal({ onClose, onAdd }) {
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <div><div className="modal-title">Log a Book</div><div className="modal-sub">Search · Rate · Annotate</div></div>
+          <div><div className="modal-title">{prefill ? "Mark as Read" : "Log a Book"}</div><div className="modal-sub">Search · Rate · Annotate</div></div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
-        <div className="field">
-          <label className="label">Search Open Library</label>
-          <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} placeholder="Title or author…" autoFocus />
-        </div>
-        {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
-        {results.length > 0 && !selected && (
-          <div className="autocomplete">
-            {results.map((r, i) => (
-              <div key={i} className="ac-item" onClick={() => { setSelected(r); setQuery(r.title); setResults([]); }}>
-                <div className="ac-title">{r.title}</div>
-                <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
+        {!prefill && (
+          <>
+            <div className="field">
+              <label className="label">Search Open Library</label>
+              <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} placeholder="Title or author…" autoFocus />
+            </div>
+            {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
+            {results.length > 0 && !selected && (
+              <div className="autocomplete">
+                {results.map((r, i) => (
+                  <div key={i} className="ac-item" onClick={() => { setSelected(r); setQuery(r.title); setResults([]); }}>
+                    <div className="ac-title">{r.title}</div>
+                    <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+          </>
+        )}
+        {prefill && selected && (
+          <div style={{ display: "flex", gap: 12, marginBottom: 18, padding: "12px 14px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 8 }}>
+            <div style={{ width: 42, height: 60, borderRadius: 4, overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+              {prefill.cover ? <img src={prefill.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
+            </div>
+            <div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{prefill.title}</div>
+              <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{prefill.author}</div>
+            </div>
           </div>
         )}
         <div className="field">
@@ -275,10 +307,11 @@ function AddModal({ onClose, onAdd }) {
         <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected && rating ? 1 : 0.4, cursor: selected && rating ? "pointer" : "not-allowed" }}
           onClick={() => {
             if (!selected || !rating) return;
-            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover: selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
+            const cover = selected._prefillCover ?? (selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null);
+            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
             onClose();
           }}>
-          Add to Shelf
+          {prefill ? "Add to Shelf" : "Add to Shelf"}
         </button>
       </div>
     </div>
@@ -324,13 +357,14 @@ function DetailModal({ book, onClose, onUpdate }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose, onAdd, quizData }) {
+function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead }) {
   const [tasteProfile, setTasteProfile] = useState(null);
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
   const [ratingIdx, setRatingIdx] = useState(null);
+  const [savedIdx, setSavedIdx] = useState(new Set());
 
   const libraryLines = (shelf) => shelf.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n");
 
@@ -466,6 +500,16 @@ Respond ONLY with valid JSON (no markdown):
                           onClick={() => setRatingIdx(i)}
                           style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
                         >✓ Already Read</button>
+                        <button
+                          onClick={async () => {
+                            if (savedIdx.has(i)) return;
+                            let cover = null;
+                            try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
+                            setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
+                            setSavedIdx(prev => new Set([...prev, i]));
+                          }}
+                          style={{ fontSize: 10, padding: "3px 10px", background: savedIdx.has(i) ? "#f0fdf4" : "var(--bg)", color: savedIdx.has(i) ? "#16a34a" : "var(--ink3)", border: `1px solid ${savedIdx.has(i) ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
+                        >{savedIdx.has(i) ? "✓ Saved!" : "＋ To Read"}</button>
                       </div>
                     </div>
                     <div className="rec-reason">{rec.reason}</div>
@@ -493,6 +537,20 @@ async function fetchCover(title, author) {
   };
   const cover_i = (await search(`${title} ${author}`)) ?? (await search(title));
   return cover_i ? `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg` : null;
+}
+
+// ── BOOK META HELPER (cover + pages) ───────────────────────────────
+async function fetchBookMeta(title, author) {
+  const search = async (q) => {
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i,number_of_pages_median`);
+    const d = await r.json();
+    const best = d.docs?.find(doc => doc.cover_i) ?? d.docs?.[0] ?? null;
+    return best;
+  };
+  const doc = (await search(`${title} ${author}`)) ?? (await search(title));
+  const cover = doc?.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
+  const pages = doc?.number_of_pages_median || null;
+  return { cover, pages };
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
@@ -548,9 +606,9 @@ function ScanModal({ onClose, onAdd }) {
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       const now = Date.now();
       const withCovers = await Promise.all(parsed.books.map(async (b, i) => {
-        let cover = null;
-        try { cover = await fetchCover(b.title, b.author); } catch {}
-        return { ...b, id: now + i, include: true, cover };
+        let cover = null, pages = null;
+        try { ({ cover, pages } = await fetchBookMeta(b.title, b.author)); } catch {}
+        return { ...b, id: now + i, include: true, cover, pages };
       }));
       setFound(withCovers);
       setStage("review");
@@ -564,7 +622,7 @@ function ScanModal({ onClose, onAdd }) {
 
   const addAll = () => {
     found.filter(b => b.include).forEach(b => {
-      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: b.pages || null, dateRead: new Date().toISOString().slice(0,7) });
     });
     onClose();
   };
@@ -663,6 +721,203 @@ function StackModal({ onClose }) {
           </div>
         ))}
         <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
+
+// ── CSV IMPORT MODAL ───────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  // parse header
+  const parseRow = (line) => {
+    const cols = [];
+    let cur = "", inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
+      else { cur += c; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  };
+  const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, "_"));
+  const get = (row, ...names) => {
+    for (const n of names) {
+      const i = headers.findIndex(h => h.includes(n));
+      if (i >= 0) return row[i] || "";
+    }
+    return "";
+  };
+  return lines.slice(1).map(line => {
+    const row = parseRow(line);
+    const title = get(row, "title");
+    const author = get(row, "author");
+    const ratingRaw = get(row, "my_rating", "rating");
+    const dateRaw = get(row, "date_read", "dateread");
+    const pagesRaw = get(row, "number_of_pages", "pages", "num_pages");
+    const shelfRaw = get(row, "exclusive_shelf", "shelf", "bookshelves");
+    if (!title) return null;
+    const rating = parseInt(ratingRaw) || 0;
+    const pages = parseInt(pagesRaw) || null;
+    let dateRead = new Date().toISOString().slice(0, 7);
+    if (dateRaw) {
+      const m = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
+      if (m) dateRead = `${m[1]}-${m[2].padStart(2, "0")}`;
+      else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
+    }
+    return { title, author: author || "Unknown", rating, pages, dateRead, shelf: shelfRaw, include: true };
+  }).filter(Boolean);
+}
+
+function ImportCSVModal({ onClose, onAdd }) {
+  const [stage, setStage] = useState("upload");
+  const [parsed, setParsed] = useState([]);
+  const [fetching, setFetching] = useState(false);
+  const fileRef = useRef();
+
+  const handleFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rows = parseCSV(e.target.result);
+      if (rows.length === 0) { alert("No books found. Make sure this is a Goodreads or compatible CSV."); return; }
+      setParsed(rows);
+      setStage("review");
+    };
+    reader.readAsText(file);
+  };
+
+  const toggle = (i) => setParsed(p => p.map((b, j) => j === i ? { ...b, include: !b.include } : b));
+
+  const addAll = async () => {
+    setFetching(true);
+    const toAdd = parsed.filter(b => b.include);
+    const withMeta = await Promise.all(toAdd.map(async (b, i) => {
+      let cover = null, pages = b.pages;
+      try { const meta = await fetchBookMeta(b.title, b.author); cover = meta.cover; if (!pages) pages = meta.pages; } catch {}
+      return { id: Date.now() + i, title: b.title, author: b.author, cover, rating: b.rating, notes: "", genre: "General", pages, dateRead: b.dateRead };
+    }));
+    withMeta.forEach(b => onAdd(b));
+    setFetching(false);
+    onClose();
+  };
+
+  return (
+    <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-wide">
+        <div className="modal-header">
+          <div><div className="modal-title">Import CSV</div><div className="modal-sub">Goodreads · Kindle · Any compatible export</div></div>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        {stage === "upload" && (
+          <>
+            <div className="import-drop"
+              onClick={() => fileRef.current.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = "var(--cyan)"}
+              onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border2)"}
+            >
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
+              <div style={{ fontSize: 13, color: "var(--ink2)", marginBottom: 4 }}>Click or drag a CSV file here</div>
+              <div style={{ fontSize: 11, color: "var(--ink4)" }}>Goodreads export · Amazon Kindle CSV</div>
+            </div>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+            <div style={{ fontSize: 11, color: "var(--ink4)", lineHeight: 1.8 }}>
+              <strong style={{ color: "var(--ink3)" }}>Goodreads:</strong> Account → Import/Export → Export Library<br />
+              <strong style={{ color: "var(--ink3)" }}>Kindle:</strong> goodreads.com/review/import
+            </div>
+          </>
+        )}
+        {stage === "review" && (
+          <>
+            <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 14 }}>Found <strong>{parsed.length} books</strong>. Uncheck any to skip, then import.</div>
+            <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+              {parsed.map((b, i) => (
+                <div key={i} onClick={() => toggle(i)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: b.include ? "var(--cyan-dim)" : "var(--bg)", border: `1.5px solid ${b.include ? "var(--cyan-mid)" : "var(--border)"}`, borderRadius: 6, cursor: "pointer", transition: "all 0.12s" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${b.include ? "var(--cyan)" : "var(--border2)"}`, background: b.include ? "var(--cyan)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {b.include && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
+                    <div style={{ fontSize: 10, color: "var(--ink3)" }}>{b.author}{b.rating ? ` · ${"★".repeat(b.rating)}` : ""}{b.pages ? ` · ${b.pages}pp` : ""}</div>
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--ink4)", flexShrink: 0 }}>{b.dateRead}</div>
+                </div>
+              ))}
+            </div>
+            {fetching ? (
+              <div style={{ textAlign: "center", padding: "16px 0" }}>
+                <div className="spinner" style={{ width: 28, height: 28, margin: "0 auto 8px" }} />
+                <div style={{ fontSize: 12, color: "var(--ink3)" }}>Fetching covers… this may take a moment</div>
+              </div>
+            ) : (
+              <>
+                <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12 }} onClick={addAll}>
+                  Import {parsed.filter(b => b.include).length} Books
+                </button>
+                <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={() => setStage("upload")}>Choose a different file</button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ADD TO READ MODAL ──────────────────────────────────────────────
+function AddToReadModal({ onClose, onAdd }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const timer = useRef();
+
+  useEffect(() => {
+    if (!query || query.length < 2) { setResults([]); return; }
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=6&fields=key,title,author_name,cover_i`);
+        const d = await r.json();
+        setResults(d.docs || []);
+      } catch { setResults([]); }
+      setLoading(false);
+    }, 380);
+  }, [query]);
+
+  const select = (r) => {
+    const cover = r.cover_i ? `https://covers.openlibrary.org/b/id/${r.cover_i}-M.jpg` : null;
+    onAdd({ id: Date.now(), title: r.title, author: r.author_name?.[0] || "Unknown", cover, addedAt: new Date().toISOString() });
+    onClose();
+  };
+
+  return (
+    <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div><div className="modal-title">Add to To Read</div><div className="modal-sub">Search · Save for later</div></div>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        <div className="field">
+          <label className="label">Search Open Library</label>
+          <input className="input" value={query} onChange={e => setQuery(e.target.value)} placeholder="Title or author…" autoFocus />
+        </div>
+        {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
+        {results.length > 0 && (
+          <div className="autocomplete">
+            {results.map((r, i) => (
+              <div key={i} className="ac-item" onClick={() => select(r)}>
+                <div className="ac-title">{r.title}</div>
+                <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -801,9 +1056,13 @@ export default function App() {
       return saved ? JSON.parse(saved) : [];
     } catch { return []; }
   });
+  const [toRead, setToRead] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("shelf-toread")) || []; } catch { return []; }
+  });
   const [view, setView] = useState("shelf");
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
+  const [statsYear, setStatsYear] = useState("all");
   const [quizData, setQuizData] = useState(() => {
     try { return JSON.parse(localStorage.getItem("shelf-quiz")); } catch { return null; }
   });
@@ -812,6 +1071,11 @@ export default function App() {
     try { localStorage.setItem("shelf-books", JSON.stringify(books)); }
     catch { /* storage full */ }
   }, [books]);
+
+  useEffect(() => {
+    try { localStorage.setItem("shelf-toread", JSON.stringify(toRead)); }
+    catch { /* storage full */ }
+  }, [toRead]);
 
   useEffect(() => {
     if (!quizData) setModal("quiz");
@@ -827,9 +1091,13 @@ export default function App() {
     b.author.toLowerCase().includes(search.toLowerCase())
   );
 
-  const avg = books.length ? (books.reduce((a,b) => a+b.rating, 0)/books.length).toFixed(1) : "—";
-  const totalPg = books.reduce((a,b) => a+(b.pages||0), 0);
-  const genres = [...new Set(books.map(b => b.genre))];
+  // Year filter for stats
+  const statYears = [...new Set(books.map(b => b.dateRead?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a);
+  const statBooks = statsYear === "all" ? books : books.filter(b => b.dateRead?.startsWith(statsYear));
+
+  const avg = statBooks.length ? (statBooks.reduce((a,b) => a+b.rating, 0)/statBooks.length).toFixed(1) : "—";
+  const totalPg = statBooks.reduce((a,b) => a+(b.pages||0), 0);
+  const genres = [...new Set(statBooks.map(b => b.genre))];
 
   return (
     <>
@@ -846,13 +1114,14 @@ export default function App() {
             <span className="logo-badge">AI</span>
           </div>
           <div className="nav-pill">
-            {["shelf","stats"].map(v => (
-              <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={() => setView(v)}>{v}</button>
+            {[["shelf","shelf"],["stats","stats"],["to-read","to read"]].map(([v, label]) => (
+              <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={() => setView(v)}>{label}</button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn-ghost" onClick={() => setModal("stack")}>Stack ↗</button>
             <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Reading DNA</button>
+            <button className="btn-ghost" onClick={() => setModal("import-csv")}>Import CSV</button>
             <button className="btn-ghost" onClick={() => setModal("scan")}>📸 Scan Shelf</button>
             <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
           </div>
@@ -861,10 +1130,10 @@ export default function App() {
         <main style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px" }}>
           <div className="stat-bar">
             {[
-              { label: "Books Read", value: books.length },
-              { label: "Avg Rating", value: avg + " ★" },
+              { label: "Books Read", value: statBooks.length },
+              { label: "Avg Rating", value: statBooks.length ? avg + " ★" : "—" },
               { label: "Pages Read", value: totalPg > 0 ? totalPg.toLocaleString() : "—" },
-              { label: "Genres", value: genres.length },
+              { label: "Genres", value: genres.length || "—" },
             ].map((s,i) => (
               <div key={i} className="stat-cell">
                 <div className="stat-label">{s.label}</div>
@@ -900,11 +1169,20 @@ export default function App() {
 
           {view === "stats" && (
             <div style={{ display: "grid", gap: 16 }}>
+              {statYears.length > 0 && (
+                <div className="year-filter">
+                  <span style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.12em", textTransform: "uppercase", marginRight: 4 }}>Filter:</span>
+                  <button className={`year-btn ${statsYear === "all" ? "active" : ""}`} onClick={() => setStatsYear("all")}>All Time</button>
+                  {statYears.map(y => (
+                    <button key={y} className={`year-btn ${statsYear === y ? "active" : ""}`} onClick={() => setStatsYear(y)}>{y}</button>
+                  ))}
+                </div>
+              )}
               <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Rating Distribution</div>
                 {[5,4,3,2,1].map(r => {
-                  const count = books.filter(b => b.rating===r).length;
-                  const pct = books.length ? (count/books.length)*100 : 0;
+                  const count = statBooks.filter(b => b.rating===r).length;
+                  const pct = statBooks.length ? (count/statBooks.length)*100 : 0;
                   return (
                     <div key={r} className="bar-row">
                       <div style={{ width: 14, textAlign: "right", color: "var(--amber)", fontSize: 14 }}>{r}</div>
@@ -917,10 +1195,10 @@ export default function App() {
               </div>
               <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Genre Breakdown</div>
-                {genres.length === 0 && <div style={{ fontSize: 12, color: "var(--ink4)" }}>No books yet</div>}
+                {genres.length === 0 && <div style={{ fontSize: 12, color: "var(--ink4)" }}>{statsYear === "all" ? "No books yet" : `No books read in ${statsYear}`}</div>}
                 {genres.map(g => {
-                  const count = books.filter(b => b.genre===g).length;
-                  const pct = (count/books.length)*100;
+                  const count = statBooks.filter(b => b.genre===g).length;
+                  const pct = statBooks.length ? (count/statBooks.length)*100 : 0;
                   return (
                     <div key={g} className="bar-row">
                       <div style={{ width: 110, fontSize: 11, color: "var(--ink2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g}</div>
@@ -942,15 +1220,68 @@ export default function App() {
               </div>
             </div>
           )}
+          {view === "to-read" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase" }}>{toRead.length} book{toRead.length !== 1 ? "s" : ""} saved</div>
+                <button className="btn-primary" onClick={() => setModal("add-toread")}>+ Add to List</button>
+              </div>
+              {toRead.length === 0 ? (
+                <div className="empty">
+                  <div className="empty-icon">📋</div>
+                  <div className="empty-title">Nothing saved yet</div>
+                  <div style={{ fontSize: 13, color: "var(--ink3)", maxWidth: 320, margin: "8px auto 0", lineHeight: 1.8 }}>
+                    Save books you want to read later. Get AI recommendations, then save the ones that catch your eye.
+                  </div>
+                  <button className="btn-primary" style={{ marginTop: 24, fontSize: 13, padding: "10px 28px" }} onClick={() => setModal("add-toread")}>
+                    Add your first book
+                  </button>
+                </div>
+              ) : (
+                <div className="toread-grid">
+                  {toRead.map(b => (
+                      <div key={b.id} className="toread-card">
+                        <button className="toread-remove" onClick={() => setToRead(p => p.filter(x => x.id !== b.id))} title="Remove">✕</button>
+                        <div className="toread-cover">
+                          {b.cover ? <img src={b.cover} alt="" onError={e => { e.target.style.display="none"; e.target.parentNode.textContent="📖"; }} /> : "📖"}
+                        </div>
+                        <div>
+                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)", lineHeight: 1.3, marginBottom: 2 }}>{b.title}</div>
+                          <div style={{ fontSize: 11, color: "var(--ink3)" }}>{b.author}</div>
+                        </div>
+                        <button
+                          className="btn-ghost"
+                          style={{ width: "100%", padding: "6px 0", fontSize: 10, marginTop: "auto" }}
+                          onClick={() => setModal({ ...b, markAsRead: true })}
+                        >Mark as Read</button>
+                      </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </main>
       </div>
 
       {modal === "quiz" && <QuizModal onClose={() => setModal(null)} onSave={saveQuiz} initial={quizData} />}
       {modal === "add" && <AddModal onClose={() => setModal(null)} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
+      {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} />}
+      {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} />}
       {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
-      {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
+      {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
+      {modal?.markAsRead && (
+        <AddModal
+          onClose={() => setModal(null)}
+          prefill={modal}
+          onAdd={b => {
+            setBooks(p => [b,...p]);
+            setToRead(p => p.filter(x => x.id !== modal.id));
+            setModal(null);
+          }}
+        />
+      )}
     </>
   );
 }
