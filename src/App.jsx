@@ -324,7 +324,7 @@ function DetailModal({ book, onClose, onUpdate }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose, onAdd }) {
+function RecsModal({ books, onClose, onAdd, quizData }) {
   const [tasteProfile, setTasteProfile] = useState(null);
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -334,9 +334,17 @@ function RecsModal({ books, onClose, onAdd }) {
 
   const libraryLines = (shelf) => shelf.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n");
 
-  const prompt = `You are a literary taste analyst. Based on this reader's personal library, recommend 4 books they haven't read. Reason specifically from THEIR ratings and notes — not generic popularity.
+  const quizSection = quizData ? (() => {
+    const faves = quizData.favBooks.filter(b => b.title.trim());
+    const genres = quizData.topGenres.filter(Boolean);
+    const favLines = faves.length ? `All-time favorite books (weight these most heavily):\n${faves.map((b, i) => `${i+1}. "${b.title}"${b.author ? ` by ${b.author}` : ""}`).join("\n")}` : "";
+    const genreLines = genres.length ? `Preferred genres in ranked order: ${genres.map((g, i) => `${i+1}. ${g}`).join(", ")}` : "";
+    return [favLines, genreLines].filter(Boolean).join("\n\n");
+  })() : "";
 
-Library:
+  const prompt = `You are a literary taste analyst. Based on this reader's stated preferences and library, recommend 4 books they haven't read.${quizSection ? `\n\nCORE PREFERENCES — factor these in most heavily:\n${quizSection}` : ""}
+
+Library (use ratings and notes to fine-tune, but never override the core preferences above):
 ${libraryLines(books)}
 
 Respond ONLY with valid JSON (no markdown):
@@ -660,6 +668,69 @@ function StackModal({ onClose }) {
   );
 }
 
+// ── QUIZ MODAL ─────────────────────────────────────────────────────
+function QuizModal({ onClose, onSave, initial }) {
+  const [favBooks, setFavBooks] = useState(
+    initial?.favBooks || Array(5).fill(null).map(() => ({ title: "", author: "" }))
+  );
+  const [topGenres, setTopGenres] = useState(initial?.topGenres || ["", "", ""]);
+
+  const setBook = (i, field, val) =>
+    setFavBooks(prev => prev.map((b, j) => j === i ? { ...b, [field]: val } : b));
+  const setGenre = (i, val) =>
+    setTopGenres(prev => prev.map((g, j) => j === i ? val : g));
+
+  const save = () => { onSave({ favBooks, topGenres }); onClose(); };
+  const hasContent = favBooks.some(b => b.title.trim()) || topGenres.some(Boolean);
+
+  return (
+    <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-wide" style={{ maxHeight: "90vh", overflowY: "auto" }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Your Reading DNA</div>
+            <div className="modal-sub">Shapes every AI recommendation you get</div>
+          </div>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--cyan)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 14 }}>5 Favorite Books of All Time</div>
+          {favBooks.map((b, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--ink4)", width: 18, flexShrink: 0, textAlign: "right" }}>{i + 1}.</div>
+              <input className="input" style={{ flex: 2 }} placeholder="Title" value={b.title} onChange={e => setBook(i, "title", e.target.value)} />
+              <input className="input" style={{ flex: 1 }} placeholder="Author" value={b.author} onChange={e => setBook(i, "author", e.target.value)} />
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: "var(--cyan)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 14 }}>Top 3 Genres — Ranked</div>
+          {["1st", "2nd", "3rd"].map((label, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--ink4)", width: 28, flexShrink: 0 }}>{label}</div>
+              <select className="input" style={{ flex: 1 }} value={topGenres[i]} onChange={e => setGenre(i, e.target.value)}>
+                <option value="">— Pick a genre —</option>
+                {GENRES.filter(g => g !== "General").filter(g => !topGenres.some((tg, j) => j !== i && tg === g) || g === topGenres[i]).map(g => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        <button className="btn-primary" style={{ width: "100%", padding: "12px 0", opacity: hasContent ? 1 : 0.4, cursor: hasContent ? "pointer" : "not-allowed" }} onClick={() => hasContent && save()}>
+          Save My Preferences
+        </button>
+        <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>
+          {initial ? "Cancel" : "Skip for now"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ───────────────────────────────────────────────────────
 export default function App() {
   const [books, setBooks] = useState(() => {
@@ -671,11 +742,23 @@ export default function App() {
   const [view, setView] = useState("shelf");
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
+  const [quizData, setQuizData] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("shelf-quiz")); } catch { return null; }
+  });
 
   useEffect(() => {
     try { localStorage.setItem("shelf-books", JSON.stringify(books)); }
     catch { /* storage full */ }
   }, [books]);
+
+  useEffect(() => {
+    if (!quizData) setModal("quiz");
+  }, []);
+
+  const saveQuiz = (data) => {
+    try { localStorage.setItem("shelf-quiz", JSON.stringify(data)); } catch {}
+    setQuizData(data);
+  };
 
   const filtered = books.filter(b =>
     b.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -707,6 +790,7 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn-ghost" onClick={() => setModal("stack")}>Stack ↗</button>
+            <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Taste Quiz</button>
             <button className="btn-ghost" onClick={() => setModal("scan")}>📸 Scan Shelf</button>
             <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
           </div>
@@ -799,9 +883,10 @@ export default function App() {
         </main>
       </div>
 
+      {modal === "quiz" && <QuizModal onClose={() => setModal(null)} onSave={saveQuiz} initial={quizData} />}
       {modal === "add" && <AddModal onClose={() => setModal(null)} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} />}
       {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
       {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
     </>
