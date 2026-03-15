@@ -83,8 +83,8 @@ const CSS = `
   .book-notes { font-size: 11px; color: var(--ink4); line-height: 1.6; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; }
   .genre-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); background: var(--cyan-dim); padding: 2px 8px; border-radius: 2px; }
 
-  .stars { display: flex; gap: 2px; }
-  .star { font-size: 15px; transition: color 0.1s; cursor: default; line-height: 1; }
+  .stars { display: flex; gap: 3px; }
+  .star { font-size: 22px; transition: color 0.1s; cursor: default; line-height: 1; }
   .star.interactive { cursor: pointer; }
   .star.lit { color: var(--amber); }
   .star.dim { color: #e2e8f0; }
