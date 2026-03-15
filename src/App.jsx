@@ -162,7 +162,7 @@ function Stars({ rating, interactive = false, onChange }) {
 }
 
 // ── BOOK CARD ──────────────────────────────────────────────────────
-function BookCard({ book, onClick, onDelete }) {
+function BookCard({ book, onClick, onDelete, onRate }) {
   const [imgErr, setImgErr] = useState(false);
   const [confirming, setConfirming] = useState(false);
   return (
@@ -174,7 +174,9 @@ function BookCard({ book, onClick, onDelete }) {
         <div className="book-title">{book.title}</div>
         <div className="book-author">{book.author}</div>
         <span className="genre-tag" style={{ display: "inline-block", marginBottom: 8 }}>{book.genre}</span>
-        <Stars rating={book.rating} />
+        <div onClick={e => e.stopPropagation()}>
+          <Stars rating={book.rating} interactive onChange={r => onRate(book.id, r)} />
+        </div>
         {book.notes && <div className="book-notes">"{book.notes}"</div>}
       </div>
       <div style={{ position: "absolute", bottom: 10, right: 10 }} onClick={e => e.stopPropagation()}>
@@ -440,7 +442,19 @@ function ScanModal({ onClose, onAdd }) {
       const data = await res.json();
       const text = data.content?.[0]?.text || "";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setFound(parsed.books.map((b, i) => ({ ...b, id: Date.now() + i, include: true })));
+      const now = Date.now();
+      const withCovers = await Promise.all(parsed.books.map(async (b, i) => {
+        let cover = null;
+        try {
+          const q = encodeURIComponent(`${b.title} ${b.author}`);
+          const r = await fetch(`https://openlibrary.org/search.json?q=${q}&limit=1&fields=cover_i`);
+          const d = await r.json();
+          const cover_i = d.docs?.[0]?.cover_i;
+          if (cover_i) cover = `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg`;
+        } catch {}
+        return { ...b, id: now + i, include: true, cover };
+      }));
+      setFound(withCovers);
       setStage("review");
     } catch {
       setError("Couldn't scan the photo. Make sure your API key is set and the image is clear.");
@@ -452,7 +466,7 @@ function ScanModal({ onClose, onAdd }) {
 
   const addAll = () => {
     found.filter(b => b.include).forEach(b => {
-      onAdd({ id: b.id, title: b.title, author: b.author, cover: null, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
     });
     onClose();
   };
@@ -638,7 +652,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="book-grid">
-                  {filtered.map(b => <BookCard key={b.id} book={b} onClick={b => setModal(b)} onDelete={id => setBooks(p => p.filter(b => b.id !== id))} />)}
+                  {filtered.map(b => <BookCard key={b.id} book={b} onClick={b => setModal(b)} onDelete={id => setBooks(p => p.filter(b => b.id !== id))} onRate={(id, r) => setBooks(p => p.map(x => x.id === id ? {...x, rating: r} : x))} />)}
                 </div>
               )}
             </>
