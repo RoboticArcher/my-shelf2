@@ -202,6 +202,9 @@ const CSS = `
     .filter-row { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
     .modal { padding: 22px 18px; }
   }
+
+  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; z-index: 9999; pointer-events: none; animation: toast-in 0.2s ease; }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 `;
 
 // ── GENRE HELPER ───────────────────────────────────────────────────
@@ -311,7 +314,7 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=6&fields=key,title,author_name,cover_i,number_of_pages_median,subject`);
+        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=key,title,author_name,cover_i,number_of_pages_median,subject`);
         const d = await r.json();
         setResults(d.docs || []);
       } catch { setResults([]); }
@@ -447,7 +450,7 @@ function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [ratingIdx, setRatingIdx] = useState(null);
+  const [addedIdx, setAddedIdx] = useState(new Set());
   const [savedIdx, setSavedIdx] = useState(new Set());
 
   const libraryLines = (shelf) => shelf.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n");
@@ -521,12 +524,12 @@ Respond ONLY with valid JSON (no markdown):
     }
   };
 
-  const markRead = async (idx, rating) => {
+  const markRead = async (idx) => {
     const rec = recs[idx];
-    setRatingIdx(null);
+    setAddedIdx(prev => new Set([...prev, idx]));
     setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
     const cover = await fetchCover(rec.title, rec.author).catch(() => null);
-    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7), status: "read" });
     await replaceRec(idx, recs);
   };
 
@@ -581,14 +584,6 @@ Respond ONLY with valid JSON (no markdown):
                     <div className="spinner" style={{ margin: "0 auto 8px" }} />
                     <div style={{ fontSize: 11, color: "var(--ink4)" }}>Finding a fresh pick…</div>
                   </div>
-                ) : ratingIdx === i ? (
-                  <div>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: "var(--ink)", marginBottom: 2 }}>{rec.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 12 }}>{rec.author}</div>
-                    <div style={{ fontSize: 12, color: "var(--ink2)", marginBottom: 8 }}>How would you rate it?</div>
-                    <Stars rating={0} interactive onChange={r => markRead(i, r)} />
-                    <button className="btn-ghost" style={{ marginTop: 10, padding: "6px 14px", fontSize: 11 }} onClick={() => setRatingIdx(null)}>Cancel</button>
-                  </div>
                 ) : (
                   <>
                     <div className="rec-header">
@@ -599,9 +594,9 @@ Respond ONLY with valid JSON (no markdown):
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                         <div className="match-badge">{rec.match}% match</div>
                         <button
-                          onClick={() => setRatingIdx(i)}
-                          style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
-                        >✓ Already Read</button>
+                          onClick={() => !addedIdx.has(i) && markRead(i)}
+                          style={{ fontSize: 10, padding: "3px 10px", background: addedIdx.has(i) ? "var(--cyan-dim)" : "var(--cyan-dim)", color: addedIdx.has(i) ? "var(--cyan)" : "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: addedIdx.has(i) ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap", opacity: addedIdx.has(i) ? 0.6 : 1 }}
+                        >{addedIdx.has(i) ? "✓ Added" : "✓ Already Read"}</button>
                         <button
                           onClick={() => saveToRead(i)}
                           style={{ fontSize: 10, padding: "3px 10px", background: savedIdx.has(i) ? "#f0fdf4" : "var(--bg)", color: savedIdx.has(i) ? "#16a34a" : "var(--ink3)", border: `1px solid ${savedIdx.has(i) ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: savedIdx.has(i) ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
@@ -1034,7 +1029,7 @@ function AddToReadModal({ onClose, onAdd }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=6&fields=key,title,author_name,cover_i`);
+        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=key,title,author_name,cover_i`);
         const d = await r.json();
         setResults(d.docs || []);
       } catch { setResults([]); }
@@ -1220,6 +1215,8 @@ export default function App() {
   const [readingGoal, setReadingGoal] = useState(() => { try { return parseInt(localStorage.getItem("shelf-goal")) || 0; } catch { return 0; } });
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalInput, setGoalInput] = useState("");
+  const [toast, setToast] = useState(null);
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const [quizData, setQuizData] = useState(() => {
     try { return JSON.parse(localStorage.getItem("shelf-quiz")); } catch { return null; }
   });
@@ -1311,6 +1308,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = "my-shelf.csv"; a.click();
     URL.revokeObjectURL(url);
+    showToast(`✓ Exported ${books.length} book${books.length !== 1 ? "s" : ""} to my-shelf.csv`);
   };
 
   return (
@@ -1639,6 +1637,7 @@ export default function App() {
           }}
         />
       )}
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }
