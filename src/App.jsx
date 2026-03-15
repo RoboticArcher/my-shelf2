@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 
-const ANTHROPIC_KEY = "paste-your-key-here";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
@@ -292,7 +291,7 @@ function DetailModal({ book, onClose }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose, apiKey }) {
+function RecsModal({ books, onClose }) {
   const [parsed, setParsed] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -314,9 +313,9 @@ Respond ONLY with valid JSON (no markdown):
   const generate = async () => {
     setLoading(true); setError(null); setParsed(null);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/anthropic", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
       });
       const data = await res.json();
@@ -385,7 +384,7 @@ Respond ONLY with valid JSON (no markdown):
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
-function ScanModal({ onClose, onAdd, apiKey }) {
+function ScanModal({ onClose, onAdd }) {
   const [stage, setStage] = useState("upload");
   const [preview, setPreview] = useState(null);
   const [imageData, setImageData] = useState(null);
@@ -404,9 +403,9 @@ function ScanModal({ onClose, onAdd, apiKey }) {
     if (!imageData) return;
     setStage("scanning"); setError(null);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/anthropic", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514", max_tokens: 1000,
           messages: [{ role: "user", content: [
@@ -670,8 +669,8 @@ export default function App() {
       </div>
 
       {modal === "add" && <AddModal onClose={() => setModal(null)} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
-      {modal === "scan" && <ScanModal onClose={() => setModal(null)} apiKey={ANTHROPIC_KEY} onAdd={b => setBooks(p => [b,...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} apiKey={ANTHROPIC_KEY} />}
+      {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} />}
       {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
       {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} />}
     </>
