@@ -1233,9 +1233,6 @@ export default function App() {
     catch { /* storage full */ }
   }, [toRead]);
 
-  useEffect(() => {
-    if (!quizData) setModal("quiz");
-  }, []);
 
   useEffect(() => {
     try { localStorage.setItem("shelf-goal", String(readingGoal)); } catch {}
@@ -1392,33 +1389,51 @@ export default function App() {
                 </>
               )}
               {books.length === 0 ? (
-                <div className="onboarding">
-                  <div className="onboarding-title">Your reading life,<br />finally organised.</div>
-                  <div className="onboarding-sub">
-                    Track every book you've read, rate them, leave notes, and get AI recommendations tuned to your actual taste — not an algorithm's guess.
-                  </div>
-                  <div className="onboarding-features">
-                    <div className="onboarding-feature">
-                      <div className="onboarding-feature-icon">📖</div>
-                      <div className="onboarding-feature-label">Track</div>
-                      <div className="onboarding-feature-desc">Log books, rate them, and keep notes on what you thought.</div>
+                !quizData ? (
+                  // ── Step 1: No DNA yet — show hero and prompt quiz ──
+                  <div className="onboarding">
+                    <div className="onboarding-title">Your reading life,<br />finally organised.</div>
+                    <div className="onboarding-sub">
+                      Track every book you've read, rate them, leave notes, and get AI recommendations tuned to your actual taste — not an algorithm's guess.
                     </div>
-                    <div className="onboarding-feature">
-                      <div className="onboarding-feature-icon">✦</div>
-                      <div className="onboarding-feature-label">AI Recs</div>
-                      <div className="onboarding-feature-desc">Get recommendations based on your real taste, not popularity.</div>
+                    <div className="onboarding-features">
+                      <div className="onboarding-feature">
+                        <div className="onboarding-feature-icon">📖</div>
+                        <div className="onboarding-feature-label">Track</div>
+                        <div className="onboarding-feature-desc">Log books, rate them, and keep notes on what you thought.</div>
+                      </div>
+                      <div className="onboarding-feature">
+                        <div className="onboarding-feature-icon">✦</div>
+                        <div className="onboarding-feature-label">AI Recs</div>
+                        <div className="onboarding-feature-desc">Get recommendations based on your real taste, not popularity.</div>
+                      </div>
+                      <div className="onboarding-feature">
+                        <div className="onboarding-feature-icon">📊</div>
+                        <div className="onboarding-feature-label">Stats</div>
+                        <div className="onboarding-feature-desc">See your reading pace, favourite genres, and top authors.</div>
+                      </div>
                     </div>
-                    <div className="onboarding-feature">
-                      <div className="onboarding-feature-icon">📊</div>
-                      <div className="onboarding-feature-label">Stats</div>
-                      <div className="onboarding-feature-desc">See your reading pace, favourite genres, and top authors.</div>
+                    <div className="onboarding-actions">
+                      <button className="btn-primary" style={{ fontSize: 13, padding: "11px 32px" }} onClick={() => setModal("quiz")}>Get Started →</button>
+                      <button className="btn-ghost" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => setModal("import-csv")}>Already have books? Import from Goodreads</button>
                     </div>
                   </div>
-                  <div className="onboarding-actions">
-                    <button className="btn-primary" style={{ fontSize: 13, padding: "11px 32px" }} onClick={() => setModal("add")}>+ Log your first book</button>
-                    <button className="btn-ghost" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => setModal("import-csv")}>Import from Goodreads or Amazon</button>
+                ) : (
+                  // ── Step 2: DNA saved — prompt to add books ──
+                  <div className="onboarding">
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 20, padding: "5px 14px", marginBottom: 22, fontSize: 11, fontWeight: 700, color: "var(--cyan)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      ✓ Reading DNA saved
+                    </div>
+                    <div className="onboarding-title" style={{ fontSize: 32 }}>Now let's build<br />your shelf.</div>
+                    <div className="onboarding-sub" style={{ marginBottom: 28 }}>
+                      Add the books you've read and we'll use your Reading DNA to power personalised AI recommendations.
+                    </div>
+                    <div className="onboarding-actions">
+                      <button className="btn-primary" style={{ fontSize: 13, padding: "11px 32px" }} onClick={() => setModal("add")}>+ Log your first book</button>
+                      <button className="btn-ghost" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => setModal("import-csv")}>Import from Goodreads or Amazon</button>
+                    </div>
                   </div>
-                </div>
+                )
               ) : filtered.length === 0 ? (
                 <div className="empty">
                   <div className="empty-icon">🔍</div>
