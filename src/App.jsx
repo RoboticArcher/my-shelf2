@@ -324,16 +324,20 @@ function DetailModal({ book, onClose, onUpdate }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose }) {
-  const [parsed, setParsed] = useState(null);
+function RecsModal({ books, onClose, onAdd }) {
+  const [tasteProfile, setTasteProfile] = useState(null);
+  const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [ratingIdx, setRatingIdx] = useState(null);
+
+  const libraryLines = (shelf) => shelf.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n");
 
   const prompt = `You are a literary taste analyst. Based on this reader's personal library, recommend 4 books they haven't read. Reason specifically from THEIR ratings and notes — not generic popularity.
 
 Library:
-${books.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n")}
+${libraryLines(books)}
 
 Respond ONLY with valid JSON (no markdown):
 {
@@ -343,21 +347,54 @@ Respond ONLY with valid JSON (no markdown):
   ]
 }`;
 
+  const callClaude = async (content) => {
+    const res = await fetch("/api/anthropic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content }] })
+    });
+    const data = await res.json();
+    return data.content?.[0]?.text || "";
+  };
+
   const generate = async () => {
-    setLoading(true); setError(null); setParsed(null);
+    setLoading(true); setError(null); setTasteProfile(null); setRecs([]); setRatingIdx(null);
     try {
-      const res = await fetch("/api/anthropic", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
-      });
-      const data = await res.json();
-      const text = data.content?.[0]?.text || "";
-      setParsed(JSON.parse(text.replace(/```json|```/g, "").trim()));
+      const text = await callClaude(prompt);
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setTasteProfile(parsed.taste_profile);
+      setRecs(parsed.recommendations.map(r => ({ ...r, replacing: false })));
     } catch {
       setError("Couldn't reach the AI. Check your API key is set correctly.");
     }
     setLoading(false);
+  };
+
+  const markRead = async (idx, rating) => {
+    const rec = recs[idx];
+    setRatingIdx(null);
+    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
+
+    const cover = await fetchCover(rec.title, rec.author).catch(() => null);
+    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+
+    const exclude = [...books.map(b => b.title), ...recs.map(r => r.title)].map(t => `"${t}"`).join(", ");
+    const updatedShelf = [...books, { title: rec.title, author: rec.author, rating, notes: "" }];
+    const replacePrompt = `You are a literary taste analyst. Recommend exactly 1 book for this reader. Do NOT suggest any of these titles: ${exclude}.
+
+Library:
+${libraryLines(updatedShelf)}
+
+Respond ONLY with valid JSON (no markdown):
+{ "title": "...", "author": "...", "match": 90, "reason": "..." }`;
+
+    try {
+      const text = await callClaude(replacePrompt);
+      const newRec = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setRecs(prev => prev.map((r, i) => i === idx ? { ...newRec, replacing: false } : r));
+    } catch {
+      setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: false } : r));
+    }
   };
 
   const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
@@ -387,22 +424,45 @@ Respond ONLY with valid JSON (no markdown):
             <button className="btn-ghost" style={{ width: "100%", padding: "10px 0" }} onClick={copyPrompt}>{copied ? "✓ Copied!" : "Copy Prompt for Claude.ai"}</button>
           </div>
         )}
-        {parsed && (
+        {tasteProfile && recs.length > 0 && (
           <>
             <div className="taste-profile">
               <div style={{ fontSize: 10, fontWeight: 600, color: "var(--cyan)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 8 }}>Your Taste Profile</div>
-              <div style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.75 }}>{parsed.taste_profile}</div>
+              <div style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.75 }}>{tasteProfile}</div>
             </div>
-            {parsed.recommendations?.map((rec, i) => (
+            {recs.map((rec, i) => (
               <div key={i} className="rec-card">
-                <div className="rec-header">
-                  <div>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, color: "var(--ink)" }}>{rec.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>{rec.author}</div>
+                {rec.replacing ? (
+                  <div style={{ textAlign: "center", padding: "20px 0" }}>
+                    <div className="spinner" style={{ margin: "0 auto 8px" }} />
+                    <div style={{ fontSize: 11, color: "var(--ink4)" }}>Finding a fresh pick…</div>
                   </div>
-                  <div className="match-badge">{rec.match}% match</div>
-                </div>
-                <div className="rec-reason">{rec.reason}</div>
+                ) : ratingIdx === i ? (
+                  <div>
+                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 16, color: "var(--ink)", marginBottom: 2 }}>{rec.title}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 12 }}>{rec.author}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink2)", marginBottom: 8 }}>How would you rate it?</div>
+                    <Stars rating={0} interactive onChange={r => markRead(i, r)} />
+                    <button className="btn-ghost" style={{ marginTop: 10, padding: "6px 14px", fontSize: 11 }} onClick={() => setRatingIdx(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="rec-header">
+                      <div>
+                        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, color: "var(--ink)" }}>{rec.title}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>{rec.author}</div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                        <div className="match-badge">{rec.match}% match</div>
+                        <button
+                          onClick={() => setRatingIdx(i)}
+                          style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
+                        >✓ Already Read</button>
+                      </div>
+                    </div>
+                    <div className="rec-reason">{rec.reason}</div>
+                  </>
+                )}
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -414,6 +474,17 @@ Respond ONLY with valid JSON (no markdown):
       </div>
     </div>
   );
+}
+
+// ── COVER FETCH HELPER ─────────────────────────────────────────────
+async function fetchCover(title, author) {
+  const search = async (q) => {
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i`);
+    const d = await r.json();
+    return d.docs?.find(doc => doc.cover_i)?.cover_i ?? null;
+  };
+  const cover_i = (await search(`${title} ${author}`)) ?? (await search(title));
+  return cover_i ? `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg` : null;
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
@@ -467,15 +538,6 @@ function ScanModal({ onClose, onAdd }) {
       const data = await res.json();
       const text = data.content?.[0]?.text || "";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      const fetchCover = async (title, author) => {
-        const search = async (q) => {
-          const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i`);
-          const d = await r.json();
-          return d.docs?.find(doc => doc.cover_i)?.cover_i ?? null;
-        };
-        const cover_i = (await search(`${title} ${author}`)) ?? (await search(title));
-        return cover_i ? `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg` : null;
-      };
       const now = Date.now();
       const withCovers = await Promise.all(parsed.books.map(async (b, i) => {
         let cover = null;
@@ -739,7 +801,7 @@ export default function App() {
 
       {modal === "add" && <AddModal onClose={() => setModal(null)} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
       {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
       {modal?.id && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
     </>
