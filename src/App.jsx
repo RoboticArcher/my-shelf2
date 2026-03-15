@@ -170,6 +170,24 @@ const CSS = `
   .goal-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
   .goal-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
   .dup-warning { background: #fffbeb; border: 1.5px solid #fbbf24; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #92400e; margin-bottom: 14px; }
+
+  .dnf-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink4); background: var(--bg); border: 1.5px solid var(--border2); padding: 2px 8px; border-radius: 2px; }
+  .status-toggle { display: flex; border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 18px; }
+  .status-btn { flex: 1; background: none; border: none; padding: 9px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
+  .status-btn.active-read { background: var(--cyan); color: #fff; }
+  .status-btn.active-dnf { background: var(--ink3); color: #fff; }
+
+  @media (max-width: 640px) {
+    .stat-bar { grid-template-columns: repeat(2, 1fr); }
+    .stat-cell:nth-child(2) { border-right: none; }
+    .stat-cell:nth-child(3) { border-top: 1px solid var(--border); }
+    .stat-cell:nth-child(4) { border-top: 1px solid var(--border); border-right: none; }
+    .header { height: auto; min-height: 58px; padding: 10px 16px; flex-wrap: wrap; row-gap: 8px; }
+    .search-row { flex-wrap: wrap; }
+    .search-row .search-input { max-width: none !important; flex: 1 0 100%; }
+    .filter-row { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .modal { padding: 22px 18px; }
+  }
 `;
 
 // ── GENRE HELPER ───────────────────────────────────────────────────
@@ -200,8 +218,19 @@ function pickGenre(subjects = []) {
 // ── STARS ──────────────────────────────────────────────────────────
 function Stars({ rating, interactive = false, onChange }) {
   const [hover, setHover] = useState(0);
+  const ref = useRef();
+  const starFromTouch = (e) => {
+    const touch = e.touches[0] || e.changedTouches[0];
+    const el = ref.current;
+    if (!el || !touch) return 0;
+    const rect = el.getBoundingClientRect();
+    return Math.min(5, Math.max(1, Math.ceil((touch.clientX - rect.left) / (rect.width / 5))));
+  };
   return (
-    <div className="stars">
+    <div className="stars" ref={ref}
+      onTouchMove={interactive ? e => setHover(starFromTouch(e)) : undefined}
+      onTouchEnd={interactive ? e => { const s = starFromTouch(e); if (s) onChange?.(s); setHover(0); } : undefined}
+    >
       {[1,2,3,4,5].map(i => (
         <span key={i}
           className={`star ${interactive ? "interactive" : ""} ${i <= (hover || rating) ? "lit" : "dim"}`}
@@ -219,14 +248,17 @@ function BookCard({ book, onClick, onDelete, onRate }) {
   const [imgErr, setImgErr] = useState(false);
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="book-card" onClick={() => onClick(book)}>
+    <div className="book-card" style={{ opacity: book.status === "dnf" ? 0.7 : 1 }} onClick={() => onClick(book)}>
       <div className="book-cover">
         {!imgErr && book.cover ? <img src={book.cover} alt="" onError={() => setImgErr(true)} /> : "📖"}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="book-title">{book.title}</div>
         <div className="book-author">{book.author}</div>
-        <span className="genre-tag" style={{ display: "inline-block", marginBottom: 8 }}>{book.genre}</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+          <span className="genre-tag">{book.genre}</span>
+          {book.status === "dnf" && <span className="dnf-badge">Did Not Finish</span>}
+        </div>
         <div onClick={e => e.stopPropagation()}>
           <Stars rating={book.rating} interactive onChange={r => onRate(book.id, r)} />
         </div>
@@ -253,6 +285,7 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
   const [selected, setSelected] = useState(prefill ? { title: prefill.title, author_name: [prefill.author], cover_i: null, _prefillCover: prefill.cover } : null);
   const [rating, setRating] = useState(0);
   const [notes, setNotes] = useState("");
+  const [status, setStatus] = useState("read");
   const [loading, setLoading] = useState(false);
   const [dupWarning, setDupWarning] = useState(null);
   const timer = useRef();
@@ -322,6 +355,13 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
           </div>
         )}
         <div className="field">
+          <label className="label">Status</label>
+          <div className="status-toggle">
+            <button className={`status-btn ${status === "read" ? "active-read" : ""}`} onClick={() => setStatus("read")}>✓ Read it</button>
+            <button className={`status-btn ${status === "dnf" ? "active-dnf" : ""}`} onClick={() => setStatus("dnf")}>✕ Did Not Finish</button>
+          </div>
+        </div>
+        <div className="field">
           <label className="label">Your Rating <span style={{ color: "var(--ink4)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
           <Stars rating={rating} interactive onChange={setRating} />
         </div>
@@ -333,7 +373,7 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
           onClick={() => {
             if (!selected) return;
             const cover = selected._prefillCover ?? (selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null);
-            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
+            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7), status });
             onClose();
           }}>
           {prefill ? "Mark as Read" : "Add to Shelf"}
@@ -347,8 +387,9 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
 function DetailModal({ book, onClose, onUpdate }) {
   const [rating, setRating] = useState(book.rating);
   const [notes, setNotes] = useState(book.notes || "");
+  const [status, setStatus] = useState(book.status || "read");
 
-  const save = () => { onUpdate({ ...book, rating, notes }); onClose(); };
+  const save = () => { onUpdate({ ...book, rating, notes, status }); onClose(); };
 
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -367,6 +408,10 @@ function DetailModal({ book, onClose, onUpdate }) {
               ))}
             </div>
           </div>
+        </div>
+        <div className="status-toggle" style={{ marginBottom: 14 }}>
+          <button className={`status-btn ${status === "read" ? "active-read" : ""}`} onClick={() => setStatus("read")}>✓ Read it</button>
+          <button className={`status-btn ${status === "dnf" ? "active-dnf" : ""}`} onClick={() => setStatus("dnf")}>✕ Did Not Finish</button>
         </div>
         <textarea
           value={notes}
@@ -1195,7 +1240,7 @@ export default function App() {
   const shelfGenres = [...new Set(books.map(b => b.genre).filter(Boolean))].sort();
 
   const filtered = [...searched]
-    .filter(b => !filterGenre || b.genre === filterGenre)
+    .filter(b => !filterGenre || (filterGenre === "__dnf__" ? b.status === "dnf" : b.genre === filterGenre))
     .sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title);
       if (sortBy === "author") return a.author.localeCompare(b.author);
@@ -1208,11 +1253,12 @@ export default function App() {
   // Year filter for stats
   const statYears = [...new Set(books.map(b => b.dateRead?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a);
   const statBooks = statsYear === "all" ? books : books.filter(b => b.dateRead?.startsWith(statsYear));
+  const readBooks = statBooks.filter(b => b.status !== "dnf");
 
-  const ratedBooks = statBooks.filter(b => b.rating > 0);
+  const ratedBooks = readBooks.filter(b => b.rating > 0);
   const avg = ratedBooks.length ? (ratedBooks.reduce((a,b) => a+b.rating, 0)/ratedBooks.length).toFixed(1) : "—";
-  const totalPg = statBooks.reduce((a,b) => a+(b.pages||0), 0);
-  const genres = [...new Set(statBooks.map(b => b.genre))];
+  const totalPg = readBooks.reduce((a,b) => a+(b.pages||0), 0);
+  const genres = [...new Set(readBooks.map(b => b.genre))];
 
   // Reading goal
   const thisYear = new Date().getFullYear().toString();
@@ -1264,8 +1310,8 @@ export default function App() {
         <main style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px" }}>
           <div className="stat-bar">
             {[
-              { label: "Books Read", value: statBooks.length },
-              { label: "Avg Rating", value: statBooks.length ? avg + " ★" : "—" },
+              { label: "Books Read", value: readBooks.length },
+              { label: "Avg Rating", value: readBooks.length ? avg + " ★" : "—" },
               { label: "Pages Read", value: totalPg > 0 ? totalPg.toLocaleString() : "—" },
               { label: "Genres", value: genres.length || "—" },
             ].map((s,i) => (
@@ -1298,6 +1344,9 @@ export default function App() {
                     {shelfGenres.map(g => (
                       <button key={g} className={`filter-chip ${filterGenre === g ? "active" : ""}`} onClick={() => setFilterGenre(filterGenre === g ? "" : g)}>{g}</button>
                     ))}
+                    {books.some(b => b.status === "dnf") && (
+                      <button className={`filter-chip ${filterGenre === "__dnf__" ? "active" : ""}`} onClick={() => setFilterGenre(filterGenre === "__dnf__" ? "" : "__dnf__")}>DNF</button>
+                    )}
                   </div>
                   {readingGoal === 0 && !editingGoal && books.length >= 3 && (
                     <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>
@@ -1367,8 +1416,8 @@ export default function App() {
               <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Rating Distribution</div>
                 {[5,4,3,2,1].map(r => {
-                  const count = statBooks.filter(b => b.rating===r).length;
-                  const pct = statBooks.length ? (count/statBooks.length)*100 : 0;
+                  const count = readBooks.filter(b => b.rating===r).length;
+                  const pct = readBooks.length ? (count/readBooks.length)*100 : 0;
                   return (
                     <div key={r} className="bar-row">
                       <div style={{ width: 14, textAlign: "right", color: "var(--amber)", fontSize: 14 }}>{r}</div>
@@ -1383,8 +1432,8 @@ export default function App() {
                 <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Genre Breakdown</div>
                 {genres.length === 0 && <div style={{ fontSize: 12, color: "var(--ink4)" }}>{statsYear === "all" ? "No books yet" : `No books read in ${statsYear}`}</div>}
                 {genres.map(g => {
-                  const count = statBooks.filter(b => b.genre===g).length;
-                  const pct = statBooks.length ? (count/statBooks.length)*100 : 0;
+                  const count = readBooks.filter(b => b.genre===g).length;
+                  const pct = readBooks.length ? (count/readBooks.length)*100 : 0;
                   return (
                     <div key={g} className="bar-row">
                       <div style={{ width: 110, fontSize: 11, color: "var(--ink2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g}</div>
@@ -1397,7 +1446,7 @@ export default function App() {
               {/* Top Authors */}
               {(() => {
                 const authorCounts = {};
-                statBooks.forEach(b => { if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1; });
+                readBooks.forEach(b => { if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1; });
                 const topAuthors = Object.entries(authorCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
                 const maxCount = topAuthors[0]?.[1] || 1;
                 return topAuthors.length > 1 ? (
@@ -1420,7 +1469,7 @@ export default function App() {
                 const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
                 const monthlyCounts = months.map((m, i) => {
                   const key = `${displayYear}-${String(i+1).padStart(2,"0")}`;
-                  return { m, count: statBooks.filter(b => b.dateRead?.startsWith(key)).length };
+                  return { m, count: readBooks.filter(b => b.dateRead?.startsWith(key)).length };
                 });
                 const maxM = Math.max(...monthlyCounts.map(x => x.count), 1);
                 const hasMonthData = monthlyCounts.some(x => x.count > 0);
