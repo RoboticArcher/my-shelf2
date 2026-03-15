@@ -539,10 +539,10 @@ async function fetchCover(title, author) {
   return cover_i ? `https://covers.openlibrary.org/b/id/${cover_i}-M.jpg` : null;
 }
 
-// ── BOOK META HELPER (cover + pages) ───────────────────────────────
+// ── BOOK META HELPER (cover + pages + author) ──────────────────────
 async function fetchBookMeta(title, author) {
   const search = async (q) => {
-    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i,number_of_pages_median`);
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i,number_of_pages_median,author_name`);
     const d = await r.json();
     const best = d.docs?.find(doc => doc.cover_i) ?? d.docs?.[0] ?? null;
     return best;
@@ -550,7 +550,8 @@ async function fetchBookMeta(title, author) {
   const doc = (await search(`${title} ${author}`)) ?? (await search(title));
   const cover = doc?.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
   const pages = doc?.number_of_pages_median || null;
-  return { cover, pages };
+  const foundAuthor = doc?.author_name?.[0] || null;
+  return { cover, pages, author: foundAuthor };
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
@@ -729,8 +730,7 @@ function StackModal({ onClose }) {
 // ── CSV IMPORT MODAL ───────────────────────────────────────────────
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
-  // parse header
+  if (lines.length < 2) return { format: "unknown", rows: [] };
   const parseRow = (line) => {
     const cols = [];
     let cur = "", inQ = false;
@@ -743,7 +743,7 @@ function parseCSV(text) {
     cols.push(cur.trim());
     return cols;
   };
-  const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, "_"));
+  const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""));
   const get = (row, ...names) => {
     for (const n of names) {
       const i = headers.findIndex(h => h.includes(n));
@@ -751,30 +751,64 @@ function parseCSV(text) {
     }
     return "";
   };
-  return lines.slice(1).map(line => {
-    const row = parseRow(line);
-    const title = get(row, "title");
-    const author = get(row, "author");
-    const ratingRaw = get(row, "my_rating", "rating");
-    const dateRaw = get(row, "date_read", "dateread");
-    const pagesRaw = get(row, "number_of_pages", "pages", "num_pages");
-    const shelfRaw = get(row, "exclusive_shelf", "shelf", "bookshelves");
-    if (!title) return null;
-    const rating = parseInt(ratingRaw) || 0;
-    const pages = parseInt(pagesRaw) || null;
-    let dateRead = new Date().toISOString().slice(0, 7);
-    if (dateRaw) {
-      const m = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
-      if (m) dateRead = `${m[1]}-${m[2].padStart(2, "0")}`;
-      else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
-    }
-    return { title, author: author || "Unknown", rating, pages, dateRead, shelf: shelfRaw, include: true };
-  }).filter(Boolean);
+  // Detect format
+  const hasAsin = headers.some(h => h.includes("asin"));
+  const hasOrderId = headers.some(h => h.includes("order_id") || h === "orderid");
+  const hasGoodreads = headers.some(h => h.includes("exclusive_shelf") || h.includes("my_rating") || h.includes("bookshelves"));
+  let format = "generic";
+  if (hasGoodreads) format = "goodreads";
+  else if (hasAsin || hasOrderId) format = "amazon";
+
+  let rows;
+  if (format === "amazon") {
+    rows = lines.slice(1).map(line => {
+      const row = parseRow(line);
+      const title = get(row, "title", "product_name");
+      const category = get(row, "category", "product_category");
+      const dateRaw = get(row, "order_date", "orderdate");
+      if (!title) return null;
+      if (!category.toLowerCase().includes("kindle")) return null;
+      let dateRead = new Date().toISOString().slice(0, 7);
+      if (dateRaw) {
+        // Amazon uses MM/DD/YYYY
+        const mdy = dateRaw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+        if (mdy) dateRead = `${mdy[3]}-${mdy[1].padStart(2, "0")}`;
+        else {
+          const ymd = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
+          if (ymd) dateRead = `${ymd[1]}-${ymd[2].padStart(2, "0")}`;
+          else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
+        }
+      }
+      return { title, author: "Unknown", rating: 0, pages: null, dateRead, shelf: "read", include: true };
+    }).filter(Boolean);
+  } else {
+    rows = lines.slice(1).map(line => {
+      const row = parseRow(line);
+      const title = get(row, "title");
+      const author = get(row, "author");
+      const ratingRaw = get(row, "my_rating", "rating");
+      const dateRaw = get(row, "date_read", "dateread");
+      const pagesRaw = get(row, "number_of_pages", "pages", "num_pages");
+      const shelfRaw = get(row, "exclusive_shelf", "shelf", "bookshelves");
+      if (!title) return null;
+      const rating = parseInt(ratingRaw) || 0;
+      const pages = parseInt(pagesRaw) || null;
+      let dateRead = new Date().toISOString().slice(0, 7);
+      if (dateRaw) {
+        const m = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
+        if (m) dateRead = `${m[1]}-${m[2].padStart(2, "0")}`;
+        else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
+      }
+      return { title, author: author || "Unknown", rating, pages, dateRead, shelf: shelfRaw, include: true };
+    }).filter(Boolean);
+  }
+  return { format, rows };
 }
 
 function ImportCSVModal({ onClose, onAdd }) {
   const [stage, setStage] = useState("upload");
   const [parsed, setParsed] = useState([]);
+  const [csvFormat, setCsvFormat] = useState("generic");
   const [fetching, setFetching] = useState(false);
   const fileRef = useRef();
 
@@ -782,8 +816,13 @@ function ImportCSVModal({ onClose, onAdd }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      const rows = parseCSV(e.target.result);
-      if (rows.length === 0) { alert("No books found. Make sure this is a Goodreads or compatible CSV."); return; }
+      const { format, rows } = parseCSV(e.target.result);
+      if (rows.length === 0) {
+        if (format === "amazon") alert("No Kindle books found in this Amazon Order History CSV. Make sure your order report includes Kindle purchases.");
+        else alert("No books found. Make sure this is a Goodreads export or Amazon Order History CSV.");
+        return;
+      }
+      setCsvFormat(format);
       setParsed(rows);
       setStage("review");
     };
@@ -796,20 +835,28 @@ function ImportCSVModal({ onClose, onAdd }) {
     setFetching(true);
     const toAdd = parsed.filter(b => b.include);
     const withMeta = await Promise.all(toAdd.map(async (b, i) => {
-      let cover = null, pages = b.pages;
-      try { const meta = await fetchBookMeta(b.title, b.author); cover = meta.cover; if (!pages) pages = meta.pages; } catch {}
-      return { id: Date.now() + i, title: b.title, author: b.author, cover, rating: b.rating, notes: "", genre: "General", pages, dateRead: b.dateRead };
+      let cover = null, pages = b.pages, author = b.author;
+      try {
+        const meta = await fetchBookMeta(b.title, b.author);
+        cover = meta.cover;
+        if (!pages) pages = meta.pages;
+        if (author === "Unknown" && meta.author) author = meta.author;
+      } catch {}
+      return { id: Date.now() + i, title: b.title, author, cover, rating: b.rating, notes: "", genre: "General", pages, dateRead: b.dateRead };
     }));
     withMeta.forEach(b => onAdd(b));
     setFetching(false);
     onClose();
   };
 
+  const formatLabel = csvFormat === "amazon" ? "Amazon Order History" : csvFormat === "goodreads" ? "Goodreads Export" : "CSV Import";
+  const formatColor = csvFormat === "amazon" ? "var(--amber)" : "var(--cyan)";
+
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-wide">
         <div className="modal-header">
-          <div><div className="modal-title">Import CSV</div><div className="modal-sub">Goodreads · Kindle · Any compatible export</div></div>
+          <div><div className="modal-title">Import CSV</div><div className="modal-sub">Goodreads · Amazon Order History · Any compatible export</div></div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         {stage === "upload" && (
@@ -823,19 +870,27 @@ function ImportCSVModal({ onClose, onAdd }) {
             >
               <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
               <div style={{ fontSize: 13, color: "var(--ink2)", marginBottom: 4 }}>Click or drag a CSV file here</div>
-              <div style={{ fontSize: 11, color: "var(--ink4)" }}>Goodreads export · Amazon Kindle CSV</div>
+              <div style={{ fontSize: 11, color: "var(--ink4)" }}>Goodreads export · Amazon Order History</div>
             </div>
             <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
-            <div style={{ fontSize: 11, color: "var(--ink4)", lineHeight: 1.8 }}>
+            <div style={{ fontSize: 11, color: "var(--ink4)", lineHeight: 1.9 }}>
               <strong style={{ color: "var(--ink3)" }}>Goodreads:</strong> Account → Import/Export → Export Library<br />
-              <strong style={{ color: "var(--ink3)" }}>Kindle:</strong> goodreads.com/review/import
+              <strong style={{ color: "var(--ink3)" }}>Amazon:</strong> amazon.com/gp/b2b/reports → Order History Report → Kindle items auto-detected
             </div>
           </>
         )}
         {stage === "review" && (
           <>
-            <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 14 }}>Found <strong>{parsed.length} books</strong>. Uncheck any to skip, then import.</div>
-            <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: formatColor, color: csvFormat === "amazon" ? "#000" : "#fff", textTransform: "uppercase" }}>{formatLabel}</span>
+              <span style={{ fontSize: 12, color: "var(--ink3)" }}>Found <strong>{parsed.length} book{parsed.length !== 1 ? "s" : ""}</strong>. Uncheck any to skip.</span>
+            </div>
+            {csvFormat === "amazon" && (
+              <div style={{ fontSize: 11, color: "var(--ink4)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
+                📅 Dates shown are <strong>purchase dates</strong>. Authors will be looked up from OpenLibrary during import.
+              </div>
+            )}
+            <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 18, display: "flex", flexDirection: "column", gap: 6 }}>
               {parsed.map((b, i) => (
                 <div key={i} onClick={() => toggle(i)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: b.include ? "var(--cyan-dim)" : "var(--bg)", border: `1.5px solid ${b.include ? "var(--cyan-mid)" : "var(--border)"}`, borderRadius: 6, cursor: "pointer", transition: "all 0.12s" }}>
                   <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${b.include ? "var(--cyan)" : "var(--border2)"}`, background: b.include ? "var(--cyan)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -843,7 +898,7 @@ function ImportCSVModal({ onClose, onAdd }) {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
-                    <div style={{ fontSize: 10, color: "var(--ink3)" }}>{b.author}{b.rating ? ` · ${"★".repeat(b.rating)}` : ""}{b.pages ? ` · ${b.pages}pp` : ""}</div>
+                    <div style={{ fontSize: 10, color: "var(--ink3)" }}>{b.author !== "Unknown" ? b.author : <em style={{ color: "var(--ink4)" }}>author via OpenLibrary</em>}{b.rating ? ` · ${"★".repeat(b.rating)}` : ""}{b.pages ? ` · ${b.pages}pp` : ""}</div>
                   </div>
                   <div style={{ fontSize: 10, color: "var(--ink4)", flexShrink: 0 }}>{b.dateRead}</div>
                 </div>
@@ -852,7 +907,7 @@ function ImportCSVModal({ onClose, onAdd }) {
             {fetching ? (
               <div style={{ textAlign: "center", padding: "16px 0" }}>
                 <div className="spinner" style={{ width: 28, height: 28, margin: "0 auto 8px" }} />
-                <div style={{ fontSize: 12, color: "var(--ink3)" }}>Fetching covers… this may take a moment</div>
+                <div style={{ fontSize: 12, color: "var(--ink3)" }}>{csvFormat === "amazon" ? "Fetching covers & authors…" : "Fetching covers…"} this may take a moment</div>
               </div>
             ) : (
               <>
