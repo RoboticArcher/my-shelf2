@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
+// Module-level recs cache — persists while tab is open, cleared on regenerate
+let recsCache = null; // { tasteProfile, recs, bookCount }
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
@@ -158,6 +160,16 @@ const CSS = `
 
   .import-drop { border: 2px dashed var(--border2); border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; margin-bottom: 16px; transition: border-color 0.15s; }
   .import-drop:hover { border-color: var(--cyan); }
+
+  .filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-chip { background: none; border: 1.5px solid var(--border); border-radius: 20px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; padding: 4px 12px; cursor: pointer; color: var(--ink3); transition: all 0.15s; text-transform: uppercase; white-space: nowrap; }
+  .filter-chip:hover { border-color: var(--cyan); color: var(--cyan); }
+  .filter-chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .sort-select { background: var(--surface); border: 1.5px solid var(--border); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; color: var(--ink3); padding: 5px 10px; cursor: pointer; outline: none; appearance: none; padding-right: 24px; }
+  .goal-bar-wrap { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px; }
+  .goal-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .goal-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
+  .dup-warning { background: #fffbeb; border: 1.5px solid #fbbf24; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #92400e; margin-bottom: 14px; }
 `;
 
 // ── GENRE HELPER ───────────────────────────────────────────────────
@@ -235,17 +247,18 @@ function BookCard({ book, onClick, onDelete, onRate }) {
 }
 
 // ── ADD BOOK MODAL ─────────────────────────────────────────────────
-function AddModal({ onClose, onAdd, prefill }) {
+function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
   const [query, setQuery] = useState(prefill?.title || "");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(prefill ? { title: prefill.title, author_name: [prefill.author], cover_i: null, _prefillCover: prefill.cover } : null);
   const [rating, setRating] = useState(0);
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [dupWarning, setDupWarning] = useState(null);
   const timer = useRef();
 
   useEffect(() => {
-    if (prefill) return; // skip search when prefilled
+    if (prefill) return;
     if (!query || query.length < 2) { setResults([]); return; }
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
@@ -259,6 +272,15 @@ function AddModal({ onClose, onAdd, prefill }) {
     }, 380);
   }, [query]);
 
+  const selectBook = (r) => {
+    setSelected(r);
+    setQuery(r.title);
+    setResults([]);
+    const norm = t => t.toLowerCase().trim();
+    const dup = existingBooks.find(b => norm(b.title) === norm(r.title));
+    setDupWarning(dup ? dup.title : null);
+  };
+
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
@@ -270,13 +292,13 @@ function AddModal({ onClose, onAdd, prefill }) {
           <>
             <div className="field">
               <label className="label">Search Open Library</label>
-              <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} placeholder="Title or author…" autoFocus />
+              <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); setDupWarning(null); }} placeholder="Title or author…" autoFocus />
             </div>
             {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
             {results.length > 0 && !selected && (
               <div className="autocomplete">
                 {results.map((r, i) => (
-                  <div key={i} className="ac-item" onClick={() => { setSelected(r); setQuery(r.title); setResults([]); }}>
+                  <div key={i} className="ac-item" onClick={() => selectBook(r)}>
                     <div className="ac-title">{r.title}</div>
                     <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
                   </div>
@@ -284,6 +306,9 @@ function AddModal({ onClose, onAdd, prefill }) {
               </div>
             )}
           </>
+        )}
+        {dupWarning && (
+          <div className="dup-warning">⚠ "{dupWarning}" is already on your shelf — you can still add it again.</div>
         )}
         {prefill && selected && (
           <div style={{ display: "flex", gap: 12, marginBottom: 18, padding: "12px 14px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 8 }}>
@@ -297,21 +322,21 @@ function AddModal({ onClose, onAdd, prefill }) {
           </div>
         )}
         <div className="field">
-          <label className="label">Your Rating</label>
+          <label className="label">Your Rating <span style={{ color: "var(--ink4)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
           <Stars rating={rating} interactive onChange={setRating} />
         </div>
         <div className="field">
           <label className="label">Personal Notes</label>
           <textarea className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did this book do to you?" rows={4} />
         </div>
-        <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected && rating ? 1 : 0.4, cursor: selected && rating ? "pointer" : "not-allowed" }}
+        <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected ? 1 : 0.4, cursor: selected ? "pointer" : "not-allowed" }}
           onClick={() => {
-            if (!selected || !rating) return;
+            if (!selected) return;
             const cover = selected._prefillCover ?? (selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null);
             onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
             onClose();
           }}>
-          {prefill ? "Add to Shelf" : "Add to Shelf"}
+          {prefill ? "Mark as Read" : "Add to Shelf"}
         </button>
       </div>
     </div>
@@ -399,13 +424,20 @@ Respond ONLY with valid JSON (no markdown):
     return data.content?.[0]?.text || "";
   };
 
-  const generate = async () => {
+  const generate = async (useCache = false) => {
+    if (useCache && recsCache && recsCache.bookCount === books.length && recsCache.recs.length > 0) {
+      setTasteProfile(recsCache.tasteProfile);
+      setRecs(recsCache.recs);
+      return;
+    }
     setLoading(true); setError(null); setTasteProfile(null); setRecs([]); setRatingIdx(null);
     try {
       const text = await callClaude(prompt);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       setTasteProfile(parsed.taste_profile);
-      setRecs(parsed.recommendations.map(r => ({ ...r, replacing: false })));
+      const newRecs = parsed.recommendations.map(r => ({ ...r, replacing: false }));
+      setRecs(newRecs);
+      recsCache = { tasteProfile: parsed.taste_profile, recs: newRecs, bookCount: books.length };
     } catch {
       setError("Couldn't reach the AI. Check your API key is set correctly.");
     }
@@ -452,7 +484,7 @@ Respond ONLY with valid JSON (no markdown):
 
   const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
 
-  useEffect(() => { generate(); }, []);
+  useEffect(() => { generate(true); }, []);
 
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -523,7 +555,7 @@ Respond ONLY with valid JSON (no markdown):
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={generate}>Regenerate</button>
+              <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={() => { recsCache = null; generate(false); }}>Regenerate</button>
               <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={copyPrompt}>{copied ? "✓ Copied!" : "Copy Prompt"}</button>
             </div>
           </>
@@ -1122,7 +1154,12 @@ export default function App() {
   const [view, setView] = useState("shelf");
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("date-added");
+  const [filterGenre, setFilterGenre] = useState("");
   const [statsYear, setStatsYear] = useState("all");
+  const [readingGoal, setReadingGoal] = useState(() => { try { return parseInt(localStorage.getItem("shelf-goal")) || 0; } catch { return 0; } });
+  const [editingGoal, setEditingGoal] = useState(false);
+  const [goalInput, setGoalInput] = useState("");
   const [quizData, setQuizData] = useState(() => {
     try { return JSON.parse(localStorage.getItem("shelf-quiz")); } catch { return null; }
   });
@@ -1141,23 +1178,56 @@ export default function App() {
     if (!quizData) setModal("quiz");
   }, []);
 
+  useEffect(() => {
+    try { localStorage.setItem("shelf-goal", String(readingGoal)); } catch {}
+  }, [readingGoal]);
+
   const saveQuiz = (data) => {
     try { localStorage.setItem("shelf-quiz", JSON.stringify(data)); } catch {}
     setQuizData(data);
   };
 
-  const filtered = books.filter(b =>
+  const searched = books.filter(b =>
     b.title.toLowerCase().includes(search.toLowerCase()) ||
     b.author.toLowerCase().includes(search.toLowerCase())
   );
+
+  const shelfGenres = [...new Set(books.map(b => b.genre).filter(Boolean))].sort();
+
+  const filtered = [...searched]
+    .filter(b => !filterGenre || b.genre === filterGenre)
+    .sort((a, b) => {
+      if (sortBy === "title") return a.title.localeCompare(b.title);
+      if (sortBy === "author") return a.author.localeCompare(b.author);
+      if (sortBy === "rating-high") return (b.rating || 0) - (a.rating || 0);
+      if (sortBy === "rating-low") return (a.rating || 0) - (b.rating || 0);
+      if (sortBy === "date-read") return (b.dateRead || "").localeCompare(a.dateRead || "");
+      return 0; // date-added = insertion order (newest first, we prepend)
+    });
 
   // Year filter for stats
   const statYears = [...new Set(books.map(b => b.dateRead?.slice(0,4)).filter(Boolean))].sort((a,b) => b-a);
   const statBooks = statsYear === "all" ? books : books.filter(b => b.dateRead?.startsWith(statsYear));
 
-  const avg = statBooks.length ? (statBooks.reduce((a,b) => a+b.rating, 0)/statBooks.length).toFixed(1) : "—";
+  const ratedBooks = statBooks.filter(b => b.rating > 0);
+  const avg = ratedBooks.length ? (ratedBooks.reduce((a,b) => a+b.rating, 0)/ratedBooks.length).toFixed(1) : "—";
   const totalPg = statBooks.reduce((a,b) => a+(b.pages||0), 0);
   const genres = [...new Set(statBooks.map(b => b.genre))];
+
+  // Reading goal
+  const thisYear = new Date().getFullYear().toString();
+  const thisYearBooks = books.filter(b => b.dateRead?.startsWith(thisYear));
+
+  // Export CSV
+  const exportCSV = () => {
+    const headers = ["Title","Author","Rating","Date Read","Pages","Genre","Notes"];
+    const rows = books.map(b => [b.title, b.author, b.rating || "", b.dateRead || "", b.pages || "", b.genre || "", b.notes || ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "my-shelf.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <>
@@ -1186,6 +1256,7 @@ export default function App() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Reading DNA</button>
             <button className="btn-ghost" onClick={() => setModal("import-csv")}>Import CSV</button>
+            <button className="btn-ghost" onClick={exportCSV} disabled={books.length === 0}>Export CSV</button>
             <button className="btn-ghost" onClick={() => setModal("scan")}>📸 Scan Shelf</button>
           </div>
         </header>
@@ -1210,9 +1281,54 @@ export default function App() {
               <div className="search-row">
                 <input className="search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your shelf…" style={{ maxWidth: 280 }} />
                 <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
-                <button className="rec-btn" disabled={books.length < 2} onClick={() => books.length >= 2 && setModal("rec")}>✦ Get AI Recs</button>
+                <button className="rec-btn" disabled={books.length < 2} title={books.length < 2 ? "Add at least 2 books to get recommendations" : ""} onClick={() => books.length >= 2 && setModal("rec")}>✦ Get AI Recs</button>
               </div>
-              {filtered.length === 0 ? (
+              {books.length > 0 && (
+                <>
+                  <div className="filter-row">
+                    <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+                      <option value="date-added">Sort: Date Added</option>
+                      <option value="date-read">Sort: Date Read</option>
+                      <option value="rating-high">Sort: Highest Rated</option>
+                      <option value="rating-low">Sort: Lowest Rated</option>
+                      <option value="title">Sort: Title A–Z</option>
+                      <option value="author">Sort: Author A–Z</option>
+                    </select>
+                    <button className={`filter-chip ${!filterGenre ? "active" : ""}`} onClick={() => setFilterGenre("")}>All</button>
+                    {shelfGenres.map(g => (
+                      <button key={g} className={`filter-chip ${filterGenre === g ? "active" : ""}`} onClick={() => setFilterGenre(filterGenre === g ? "" : g)}>{g}</button>
+                    ))}
+                  </div>
+                  {readingGoal === 0 && !editingGoal && books.length >= 3 && (
+                    <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>
+                      <button onClick={() => { setGoalInput(""); setEditingGoal(true); }} style={{ background: "none", border: "none", color: "var(--cyan)", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: 0, textDecoration: "underline" }}>Set a {thisYear} reading goal</button>
+                    </div>
+                  )}
+                  {readingGoal > 0 && (
+                    <div className="goal-bar-wrap">
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink4)", letterSpacing: "0.12em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                        {thisYear} Goal
+                      </div>
+                      <div className="goal-track">
+                        <div className="goal-fill" style={{ width: `${Math.min(100, (thisYearBooks.length / readingGoal) * 100)}%` }} />
+                      </div>
+                      <div style={{ fontSize: 12, color: thisYearBooks.length >= readingGoal ? "#16a34a" : "var(--ink3)", whiteSpace: "nowrap", fontWeight: 600 }}>
+                        {thisYearBooks.length} / {readingGoal}{thisYearBooks.length >= readingGoal ? " 🎉" : ""}
+                      </div>
+                      <button onClick={() => { setGoalInput(String(readingGoal)); setEditingGoal(true); }} style={{ fontSize: 10, padding: "3px 8px", background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", color: "var(--ink4)", fontFamily: "'JetBrains Mono', monospace" }}>edit</button>
+                    </div>
+                  )}
+                  {editingGoal && (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, padding: "12px 16px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 8 }}>
+                      <span style={{ fontSize: 11, color: "var(--ink3)", whiteSpace: "nowrap" }}>Books to read in {thisYear}:</span>
+                      <input type="number" min="1" max="365" className="input" value={goalInput} onChange={e => setGoalInput(e.target.value)} style={{ width: 80, padding: "6px 10px" }} autoFocus />
+                      <button className="btn-primary" style={{ padding: "6px 16px", fontSize: 11 }} onClick={() => { setReadingGoal(parseInt(goalInput) || 0); setEditingGoal(false); }}>Set</button>
+                      <button className="btn-ghost" style={{ padding: "5px 12px" }} onClick={() => setEditingGoal(false)}>Cancel</button>
+                    </div>
+                  )}
+                </>
+              )}
+              {books.length === 0 ? (
                 <div className="empty">
                   <div className="empty-icon">📚</div>
                   <div className="empty-title">Welcome to Shelf</div>
@@ -1222,6 +1338,12 @@ export default function App() {
                   <button className="btn-primary" style={{ marginTop: 24, fontSize: 13, padding: "10px 28px" }} onClick={() => setModal("add")}>
                     Log your first book
                   </button>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="empty">
+                  <div className="empty-icon">🔍</div>
+                  <div className="empty-title">No matches</div>
+                  <div style={{ fontSize: 13, color: "var(--ink3)", marginTop: 8 }}>Try a different search or filter.</div>
                 </div>
               ) : (
                 <div className="book-grid">
@@ -1272,6 +1394,50 @@ export default function App() {
                   );
                 })}
               </div>
+              {/* Top Authors */}
+              {(() => {
+                const authorCounts = {};
+                statBooks.forEach(b => { if (b.author) authorCounts[b.author] = (authorCounts[b.author] || 0) + 1; });
+                const topAuthors = Object.entries(authorCounts).sort((a,b) => b[1]-a[1]).slice(0, 8);
+                const maxCount = topAuthors[0]?.[1] || 1;
+                return topAuthors.length > 1 ? (
+                  <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Top Authors</div>
+                    {topAuthors.map(([author, count]) => (
+                      <div key={author} className="bar-row">
+                        <div style={{ width: 130, fontSize: 11, color: "var(--ink2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{author}</div>
+                        <div className="bar-track"><div className="bar-fill" style={{ width: `${(count/maxCount)*100}%` }} /></div>
+                        <div style={{ width: 20, textAlign: "right", color: "var(--ink3)", fontSize: 12 }}>{count}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Books by Month */}
+              {(() => {
+                const displayYear = statsYear === "all" ? thisYear : statsYear;
+                const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                const monthlyCounts = months.map((m, i) => {
+                  const key = `${displayYear}-${String(i+1).padStart(2,"0")}`;
+                  return { m, count: statBooks.filter(b => b.dateRead?.startsWith(key)).length };
+                });
+                const maxM = Math.max(...monthlyCounts.map(x => x.count), 1);
+                const hasMonthData = monthlyCounts.some(x => x.count > 0);
+                return hasMonthData ? (
+                  <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Books by Month — {displayYear}</div>
+                    {monthlyCounts.map(({ m, count }) => (
+                      <div key={m} className="bar-row">
+                        <div style={{ width: 30, fontSize: 11, color: "var(--ink2)" }}>{m}</div>
+                        <div className="bar-track"><div className="bar-fill" style={{ width: `${(count/maxM)*100}%` }} /></div>
+                        <div style={{ width: 20, textAlign: "right", color: "var(--ink3)", fontSize: 12 }}>{count || ""}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
               <div className="tier-bar-wrap">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase" }}>Free Tier Usage</div>
@@ -1281,6 +1447,12 @@ export default function App() {
                   <div className="tier-fill" style={{ width: `${(books.length/50)*100}%`, background: books.length > 40 ? "linear-gradient(90deg, #ef4444, #f87171)" : "linear-gradient(90deg, var(--cyan), var(--cyan-mid))" }} />
                 </div>
                 {books.length > 40 && <div style={{ fontSize: 12, color: "var(--red)", marginTop: 10 }}>Almost at limit — upgrade for unlimited shelving</div>}
+                {readingGoal === 0 && (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ fontSize: 11, color: "var(--ink4)" }}>Set a reading goal for {thisYear}</div>
+                    <button className="btn-ghost" style={{ padding: "4px 12px", fontSize: 10 }} onClick={() => { setView("shelf"); setGoalInput(""); setEditingGoal(true); }}>Set Goal</button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1328,7 +1500,7 @@ export default function App() {
       </div>
 
       {modal === "quiz" && <QuizModal onClose={() => setModal(null)} onSave={saveQuiz} initial={quizData} />}
-      {modal === "add" && <AddModal onClose={() => setModal(null)} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
+      {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
