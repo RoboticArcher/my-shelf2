@@ -668,6 +668,69 @@ function StackModal({ onClose }) {
   );
 }
 
+// ── BOOK SEARCH INPUT ──────────────────────────────────────────────
+function BookSearchInput({ value, onChange }) {
+  const [query, setQuery] = useState(value?.title || "");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const timer = useRef();
+
+  useEffect(() => {
+    if (!query || query.length < 2) { setResults([]); return; }
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&fields=title,author_name`);
+        const d = await r.json();
+        setResults(d.docs || []);
+      } catch { setResults([]); }
+      setLoading(false);
+    }, 380);
+  }, [query]);
+
+  const select = (result) => {
+    const title = result.title;
+    const author = result.author_name?.[0] || "";
+    setQuery(title);
+    setResults([]);
+    onChange({ title, author });
+  };
+
+  const clear = () => { setQuery(""); setResults([]); onChange({ title: "", author: "" }); };
+
+  return (
+    <div style={{ position: "relative", flex: 1 }}>
+      <div style={{ position: "relative" }}>
+        <input
+          className="input"
+          placeholder="Search a book…"
+          value={query}
+          onChange={e => { setQuery(e.target.value); if (!e.target.value) clear(); }}
+          style={{ width: "100%", paddingRight: value?.title ? 28 : undefined }}
+        />
+        {value?.title && (
+          <button onClick={clear} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--ink4)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>×</button>
+        )}
+      </div>
+      {loading && <div style={{ fontSize: 10, color: "var(--ink4)", padding: "3px 0" }}>searching…</div>}
+      {value?.author && !results.length && (
+        <div style={{ fontSize: 10, color: "var(--ink3)", padding: "3px 2px" }}>by {value.author}</div>
+      )}
+      {results.length > 0 && (
+        <div className="autocomplete" style={{ position: "absolute", zIndex: 200, width: "100%", top: "100%" }}>
+          {results.map((r, i) => (
+            <div key={i} className="ac-item" onClick={() => select(r)}>
+              <div className="ac-title">{r.title}</div>
+              <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── QUIZ MODAL ─────────────────────────────────────────────────────
 function QuizModal({ onClose, onSave, initial }) {
   const [favBooks, setFavBooks] = useState(
@@ -675,8 +738,8 @@ function QuizModal({ onClose, onSave, initial }) {
   );
   const [topGenres, setTopGenres] = useState(initial?.topGenres || ["", "", ""]);
 
-  const setBook = (i, field, val) =>
-    setFavBooks(prev => prev.map((b, j) => j === i ? { ...b, [field]: val } : b));
+  const setBook = (i, book) =>
+    setFavBooks(prev => prev.map((b, j) => j === i ? book : b));
   const setGenre = (i, val) =>
     setTopGenres(prev => prev.map((g, j) => j === i ? val : g));
 
@@ -697,10 +760,9 @@ function QuizModal({ onClose, onSave, initial }) {
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 600, color: "var(--cyan)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 14 }}>5 Favorite Books of All Time</div>
           {favBooks.map((b, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: "var(--ink4)", width: 18, flexShrink: 0, textAlign: "right" }}>{i + 1}.</div>
-              <input className="input" style={{ flex: 2 }} placeholder="Title" value={b.title} onChange={e => setBook(i, "title", e.target.value)} />
-              <input className="input" style={{ flex: 1 }} placeholder="Author" value={b.author} onChange={e => setBook(i, "author", e.target.value)} />
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "var(--ink4)", width: 18, flexShrink: 0, paddingTop: 10, textAlign: "right" }}>{i + 1}.</div>
+              <BookSearchInput value={b} onChange={book => setBook(i, book)} />
             </div>
           ))}
         </div>
@@ -790,7 +852,7 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn-ghost" onClick={() => setModal("stack")}>Stack ↗</button>
-            <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Taste Quiz</button>
+            <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Reading DNA</button>
             <button className="btn-ghost" onClick={() => setModal("scan")}>📸 Scan Shelf</button>
             <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
           </div>
