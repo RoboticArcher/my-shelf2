@@ -144,6 +144,31 @@ const CSS = `
   .tier-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
 `;
 
+// ── GENRE HELPER ───────────────────────────────────────────────────
+const GENRES = ["Fiction","Non-Fiction","Mystery","Sci-Fi","Fantasy","Biography","History","Romance","Thriller","Self-Help","Science","Philosophy","Poetry","Horror","Children's","Graphic Novel","Classic","General"];
+
+function pickGenre(subjects = []) {
+  const s = subjects.map(x => x.toLowerCase()).join(" ");
+  if (/science fiction|sci-fi|\bsf\b/.test(s)) return "Sci-Fi";
+  if (/fantasy/.test(s)) return "Fantasy";
+  if (/mystery|detective|crime fiction/.test(s)) return "Mystery";
+  if (/thriller|suspense/.test(s)) return "Thriller";
+  if (/horror/.test(s)) return "Horror";
+  if (/romance|love story/.test(s)) return "Romance";
+  if (/biography|autobiography|memoir/.test(s)) return "Biography";
+  if (/history|historical/.test(s)) return "History";
+  if (/self.help|personal development/.test(s)) return "Self-Help";
+  if (/philosophy/.test(s)) return "Philosophy";
+  if (/poetry|poems/.test(s)) return "Poetry";
+  if (/graphic novel|comic/.test(s)) return "Graphic Novel";
+  if (/children|juvenile/.test(s)) return "Children's";
+  if (/classic/.test(s)) return "Classic";
+  if (/\bscience\b|scientific/.test(s)) return "Science";
+  if (/non-fiction|nonfiction/.test(s)) return "Non-Fiction";
+  if (/\bfiction\b/.test(s)) return "Fiction";
+  return "General";
+}
+
 // ── STARS ──────────────────────────────────────────────────────────
 function Stars({ rating, interactive = false, onChange }) {
   const [hover, setHover] = useState(0);
@@ -250,7 +275,7 @@ function AddModal({ onClose, onAdd }) {
         <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected && rating ? 1 : 0.4, cursor: selected && rating ? "pointer" : "not-allowed" }}
           onClick={() => {
             if (!selected || !rating) return;
-            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover: selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null, rating, notes, genre: selected.subject?.[0] || "General", pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
+            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover: selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7) });
             onClose();
           }}>
           Add to Shelf
@@ -435,7 +460,7 @@ function ScanModal({ onClose, onAdd }) {
           model: "claude-sonnet-4-20250514", max_tokens: 1000,
           messages: [{ role: "user", content: [
             { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imageData } },
-            { type: "text", text: `Look at this bookshelf photo. Identify every book you can read from the spines. For each book provide the title and author — if the author isn't visible on the spine, use your knowledge to fill it in from the title. Only use "Unknown" if you genuinely cannot determine the author. Respond ONLY with valid JSON (no markdown):\n{\n  "books": [\n    { "title": "...", "author": "..." }\n  ]\n}` }
+            { type: "text", text: `Look at this bookshelf photo. Identify every book you can read from the spines. For each book provide the title, author, and genre. If the author isn't visible on the spine, use your knowledge to fill it in. Only use "Unknown" for author if you truly cannot determine it. For genre choose one of: Fiction, Non-Fiction, Mystery, Sci-Fi, Fantasy, Biography, History, Romance, Thriller, Self-Help, Science, Philosophy, Poetry, Horror, Children's, Graphic Novel, Classic, General. Respond ONLY with valid JSON (no markdown):\n{\n  "books": [\n    { "title": "...", "author": "...", "genre": "..." }\n  ]\n}` }
           ]}]
         })
       });
@@ -466,7 +491,7 @@ function ScanModal({ onClose, onAdd }) {
 
   const addAll = () => {
     found.filter(b => b.include).forEach(b => {
-      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
     });
     onClose();
   };
