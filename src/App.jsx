@@ -141,6 +141,20 @@ const CSS = `
   .empty-icon { font-size: 52px; margin-bottom: 16px; }
   .empty-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink3); margin-bottom: 8px; }
 
+  .onboarding { max-width: 520px; margin: 60px auto; text-align: center; padding: 0 16px; }
+  .onboarding-title { font-family: 'DM Serif Display', serif; font-size: 42px; color: var(--ink); line-height: 1.15; margin-bottom: 14px; }
+  .onboarding-sub { font-size: 14px; color: var(--ink3); line-height: 1.8; margin-bottom: 36px; max-width: 380px; margin-left: auto; margin-right: auto; }
+  .onboarding-features { display: flex; justify-content: center; gap: 12px; margin-bottom: 36px; flex-wrap: wrap; }
+  .onboarding-feature { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 16px 18px; width: 140px; }
+  .onboarding-feature-icon { font-size: 22px; margin-bottom: 8px; }
+  .onboarding-feature-label { font-size: 11px; font-weight: 700; color: var(--ink2); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+  .onboarding-feature-desc { font-size: 11px; color: var(--ink4); line-height: 1.6; }
+  .onboarding-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  @media (max-width: 640px) {
+    .onboarding-title { font-size: 32px; }
+    .onboarding-feature { width: 120px; padding: 14px 12px; }
+  }
+
   .tier-bar-wrap { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 18px 22px; margin-top: 16px; }
   .tier-progress { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin-top: 10px; }
   .tier-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
@@ -1378,15 +1392,32 @@ export default function App() {
                 </>
               )}
               {books.length === 0 ? (
-                <div className="empty">
-                  <div className="empty-icon">📚</div>
-                  <div className="empty-title">Welcome to Shelf</div>
-                  <div style={{ fontSize: 13, color: "var(--ink3)", maxWidth: 340, margin: "8px auto 0", lineHeight: 1.8 }}>
-                    Your personal reading tracker — log every book you've read, rate them, leave notes, and get AI recommendations based on your actual taste.
+                <div className="onboarding">
+                  <div className="onboarding-title">Your reading life,<br />finally organised.</div>
+                  <div className="onboarding-sub">
+                    Track every book you've read, rate them, leave notes, and get AI recommendations tuned to your actual taste — not an algorithm's guess.
                   </div>
-                  <button className="btn-primary" style={{ marginTop: 24, fontSize: 13, padding: "10px 28px" }} onClick={() => setModal("add")}>
-                    Log your first book
-                  </button>
+                  <div className="onboarding-features">
+                    <div className="onboarding-feature">
+                      <div className="onboarding-feature-icon">📖</div>
+                      <div className="onboarding-feature-label">Track</div>
+                      <div className="onboarding-feature-desc">Log books, rate them, and keep notes on what you thought.</div>
+                    </div>
+                    <div className="onboarding-feature">
+                      <div className="onboarding-feature-icon">✦</div>
+                      <div className="onboarding-feature-label">AI Recs</div>
+                      <div className="onboarding-feature-desc">Get recommendations based on your real taste, not popularity.</div>
+                    </div>
+                    <div className="onboarding-feature">
+                      <div className="onboarding-feature-icon">📊</div>
+                      <div className="onboarding-feature-label">Stats</div>
+                      <div className="onboarding-feature-desc">See your reading pace, favourite genres, and top authors.</div>
+                    </div>
+                  </div>
+                  <div className="onboarding-actions">
+                    <button className="btn-primary" style={{ fontSize: 13, padding: "11px 32px" }} onClick={() => setModal("add")}>+ Log your first book</button>
+                    <button className="btn-ghost" style={{ fontSize: 12, padding: "9px 24px" }} onClick={() => setModal("import-csv")}>Import from Goodreads or Amazon</button>
+                  </div>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="empty">
