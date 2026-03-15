@@ -638,7 +638,7 @@ async function fetchCover(title, author) {
 // ── BOOK META HELPER (cover + pages + author) ──────────────────────
 async function fetchBookMeta(title, author) {
   const search = async (q) => {
-    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i,number_of_pages_median,author_name`);
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=5&fields=cover_i,number_of_pages_median,author_name,subject`);
     const d = await r.json();
     const best = d.docs?.find(doc => doc.cover_i) ?? d.docs?.[0] ?? null;
     return best;
@@ -647,7 +647,8 @@ async function fetchBookMeta(title, author) {
   const cover = doc?.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
   const pages = doc?.number_of_pages_median || null;
   const foundAuthor = doc?.author_name?.[0] || null;
-  return { cover, pages, author: foundAuthor };
+  const genre = pickGenre(doc?.subject || []);
+  return { cover, pages, author: foundAuthor, genre };
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
@@ -1238,9 +1239,35 @@ export default function App() {
     try { localStorage.setItem("shelf-goal", String(readingGoal)); } catch {}
   }, [readingGoal]);
 
-  const saveQuiz = (data) => {
+  const saveQuiz = async (data) => {
     try { localStorage.setItem("shelf-quiz", JSON.stringify(data)); } catch {}
     setQuizData(data);
+
+    // Auto-add favourite books from DNA quiz to the shelf
+    const favs = data.favBooks.filter(b => b.title.trim());
+    if (favs.length === 0) return;
+    const now = Date.now();
+    const newBooks = await Promise.all(favs.map(async (fav, i) => {
+      let meta = { cover: null, pages: null, author: null, genre: "General" };
+      try { meta = await fetchBookMeta(fav.title, fav.author || ""); } catch {}
+      return {
+        id: now + i,
+        title: fav.title,
+        author: fav.author || meta.author || "Unknown",
+        cover: meta.cover || null,
+        rating: 0,
+        notes: "",
+        genre: meta.genre || "General",
+        pages: meta.pages || null,
+        dateRead: null,
+        status: "read",
+      };
+    }));
+    setBooks(prev => {
+      const existing = new Set(prev.map(b => b.title.toLowerCase()));
+      const toAdd = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
+      return toAdd.length ? [...prev, ...toAdd] : prev;
+    });
   };
 
   const searched = books.filter(b =>
