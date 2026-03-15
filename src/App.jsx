@@ -395,7 +395,24 @@ function ScanModal({ onClose, onAdd }) {
   const handleFile = (file) => {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (e) => { setPreview(e.target.result); setImageData(e.target.result.split(",")[1]); };
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1600;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.85);
+        setPreview(compressed);
+        setImageData(compressed.split(",")[1]);
+      };
+      img.src = e.target.result;
+    };
     reader.readAsDataURL(file);
   };
 
