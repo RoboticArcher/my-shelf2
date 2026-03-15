@@ -116,8 +116,8 @@ const CSS = `
 
   .taste-profile { background: linear-gradient(135deg, #e0f7fc, #f0fdf4); border: 1.5px solid var(--cyan-mid); border-radius: 8px; padding: 18px; margin-bottom: 22px; position: relative; overflow: hidden; }
   .taste-profile::before { content: '◈'; position: absolute; right: 14px; top: 12px; font-size: 28px; color: var(--cyan); opacity: 0.15; }
-  .rec-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 12px; transition: border-color 0.15s; }
-  .rec-card:hover { border-color: var(--cyan-mid); }
+  .rec-card { background: transparent; border: none; border-top: 1.5px solid var(--border); padding: 16px 0; margin-bottom: 0; transition: none; }
+  .rec-card:first-of-type { border-top: none; }
   .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
   .match-badge { background: linear-gradient(135deg, var(--cyan), #0096c7); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 3px; flex-shrink: 0; margin-left: 12px; letter-spacing: 0.06em; }
   .rec-reason { font-size: 12px; color: var(--ink3); line-height: 1.7; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; }
@@ -412,24 +412,15 @@ Respond ONLY with valid JSON (no markdown):
     setLoading(false);
   };
 
-  const markRead = async (idx, rating) => {
-    const rec = recs[idx];
-    setRatingIdx(null);
-    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
-
-    const cover = await fetchCover(rec.title, rec.author).catch(() => null);
-    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
-
-    const exclude = [...books.map(b => b.title), ...recs.map(r => r.title)].map(t => `"${t}"`).join(", ");
-    const updatedShelf = [...books, { title: rec.title, author: rec.author, rating, notes: "" }];
+  const replaceRec = async (idx, currentRecs) => {
+    const exclude = [...books.map(b => b.title), ...currentRecs.map(r => r.title)].map(t => `"${t}"`).join(", ");
     const replacePrompt = `You are a literary taste analyst. Recommend exactly 1 book for this reader. Do NOT suggest any of these titles: ${exclude}.
 
 Library:
-${libraryLines(updatedShelf)}
+${libraryLines(books)}
 
 Respond ONLY with valid JSON (no markdown):
 { "title": "...", "author": "...", "match": 90, "reason": "..." }`;
-
     try {
       const text = await callClaude(replacePrompt);
       const newRec = JSON.parse(text.replace(/```json|```/g, "").trim());
@@ -437,6 +428,26 @@ Respond ONLY with valid JSON (no markdown):
     } catch {
       setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: false } : r));
     }
+  };
+
+  const markRead = async (idx, rating) => {
+    const rec = recs[idx];
+    setRatingIdx(null);
+    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
+    const cover = await fetchCover(rec.title, rec.author).catch(() => null);
+    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7) });
+    await replaceRec(idx, recs);
+  };
+
+  const saveToRead = async (idx) => {
+    if (savedIdx.has(idx)) return;
+    const rec = recs[idx];
+    setSavedIdx(prev => new Set([...prev, idx]));
+    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
+    let cover = null;
+    try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
+    setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
+    await replaceRec(idx, recs);
   };
 
   const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
@@ -447,7 +458,7 @@ Respond ONLY with valid JSON (no markdown):
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-wide">
         <div className="modal-header">
-          <div><div className="modal-title">For You</div><div className="modal-sub">AI-Reasoned · Based on Your Actual Taste</div></div>
+          <div style={{ flex: 1 }}><div className="modal-title">For You</div><div className="modal-sub">AI-Reasoned · Based on Your Actual Taste</div></div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         {loading && (
@@ -501,15 +512,9 @@ Respond ONLY with valid JSON (no markdown):
                           style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
                         >✓ Already Read</button>
                         <button
-                          onClick={async () => {
-                            if (savedIdx.has(i)) return;
-                            let cover = null;
-                            try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
-                            setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
-                            setSavedIdx(prev => new Set([...prev, i]));
-                          }}
-                          style={{ fontSize: 10, padding: "3px 10px", background: savedIdx.has(i) ? "#f0fdf4" : "var(--bg)", color: savedIdx.has(i) ? "#16a34a" : "var(--ink3)", border: `1px solid ${savedIdx.has(i) ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
-                        >{savedIdx.has(i) ? "✓ Saved!" : "＋ To Read"}</button>
+                          onClick={() => saveToRead(i)}
+                          style={{ fontSize: 10, padding: "3px 10px", background: savedIdx.has(i) ? "#f0fdf4" : "var(--bg)", color: savedIdx.has(i) ? "#16a34a" : "var(--ink3)", border: `1px solid ${savedIdx.has(i) ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: savedIdx.has(i) ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
+                        >＋ To Read</button>
                       </div>
                     </div>
                     <div className="rec-reason">{rec.reason}</div>
@@ -1168,17 +1173,20 @@ export default function App() {
             <span className="logo-word">Shelf</span>
             <span className="logo-badge">AI</span>
           </div>
-          <div className="nav-pill">
-            {[["shelf","shelf"],["stats","stats"],["to-read","to read"]].map(([v, label]) => (
-              <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={() => setView(v)}>{label}</button>
-            ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div className="nav-pill">
+              {[["shelf","shelf"],["to-read","to read"]].map(([v, label]) => (
+                <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={() => setView(v)}>{label}</button>
+              ))}
+            </div>
+            <div className="nav-pill">
+              <button className={`nav-btn ${view==="stats"?"active":""}`} onClick={() => setView("stats")}>stats</button>
+            </div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn-ghost" onClick={() => setModal("stack")}>Stack ↗</button>
             <button className="btn-ghost" onClick={() => setModal("quiz")}>◈ Reading DNA</button>
             <button className="btn-ghost" onClick={() => setModal("import-csv")}>Import CSV</button>
             <button className="btn-ghost" onClick={() => setModal("scan")}>📸 Scan Shelf</button>
-            <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
           </div>
         </header>
 
@@ -1200,7 +1208,8 @@ export default function App() {
           {view === "shelf" && (
             <>
               <div className="search-row">
-                <input className="search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your shelf…" />
+                <input className="search-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your shelf…" style={{ maxWidth: 280 }} />
+                <button className="btn-primary" onClick={() => setModal("add")}>+ Log Book</button>
                 <button className="rec-btn" disabled={books.length < 2} onClick={() => books.length >= 2 && setModal("rec")}>✦ Get AI Recs</button>
               </div>
               {filtered.length === 0 ? (
@@ -1324,7 +1333,6 @@ export default function App() {
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
       {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} />}
-      {modal === "stack" && <StackModal onClose={() => setModal(null)} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
       {modal?.markAsRead && (
         <AddModal
