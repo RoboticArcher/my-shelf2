@@ -3,6 +3,13 @@
 ## What This Project Is
 A personal reading tracker web app. Users log books they've read, rate them, leave notes, and get AI-powered recommendations based on their actual taste. Has a "To Read" list and stats view.
 
+**Started as:** A personal tool for Trey and people he knows.
+**Market potential:** Reading tracker + AI recs is a real product category.
+Competitors like Goodreads are bloated and old. A clean, fast, AI-native
+alternative with a strong design could have genuine commercial appeal.
+Potential monetization paths: premium tier (unlimited books, advanced stats,
+priority AI), family plan, or a one-time purchase model.
+
 **Live URL:** Deployed on Vercel via GitHub (auto-deploys on push to `main`)
 **Repo:** https://github.com/RoboticArcher/my-shelf2
 
