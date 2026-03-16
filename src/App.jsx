@@ -492,7 +492,7 @@ Respond ONLY with valid JSON (no markdown):
       setRecs(recsCache.recs);
       return;
     }
-    setLoading(true); setError(null); setTasteProfile(null); setRecs([]); setRatingIdx(null);
+    setLoading(true); setError(null); setTasteProfile(null); setRecs([]);
     try {
       const text = await callClaude(prompt);
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
