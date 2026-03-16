@@ -184,6 +184,10 @@ const CSS = `
   .goal-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
   .goal-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
   .dup-warning { background: #fffbeb; border: 1.5px solid #fbbf24; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #92400e; margin-bottom: 14px; }
+  .series-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  .series-item:last-child { border-bottom: none; }
+  .series-item:hover { background: var(--surface); }
+  .series-item.excluded { opacity: 0.45; }
 
   .dnf-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink4); background: var(--bg); border: 1.5px solid var(--border2); padding: 2px 8px; border-radius: 2px; }
   .status-toggle { display: flex; border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 18px; }
@@ -296,7 +300,10 @@ function BookCard({ book, onClick, onDelete, onRate }) {
 }
 
 // ── ADD BOOK MODAL ─────────────────────────────────────────────────
-function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
+function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }) {
+  const [mode, setMode] = useState("book"); // "book" | "series"
+
+  // ── book mode state ──
   const [query, setQuery] = useState(prefill?.title || "");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(prefill ? { title: prefill.title, author_name: [prefill.author], cover_i: null, _prefillCover: prefill.cover } : null);
@@ -306,6 +313,14 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
   const [loading, setLoading] = useState(false);
   const [dupWarning, setDupWarning] = useState(null);
   const timer = useRef();
+
+  // ── series mode state ──
+  const [seriesQuery, setSeriesQuery] = useState("");
+  const [seriesLoading, setSeriesLoading] = useState(false);
+  const [seriesError, setSeriesError] = useState(null);
+  const [seriesInfo, setSeriesInfo] = useState(null);
+  const [seriesBooks, setSeriesBooks] = useState([]);
+  const [addingAll, setAddingAll] = useState(false);
 
   useEffect(() => {
     if (prefill) return;
@@ -331,70 +346,166 @@ function AddModal({ onClose, onAdd, prefill, existingBooks = [] }) {
     setDupWarning(dup ? dup.title : null);
   };
 
+  const findSeries = async () => {
+    if (!seriesQuery.trim()) return;
+    setSeriesLoading(true); setSeriesError(null); setSeriesInfo(null); setSeriesBooks([]);
+    try {
+      const res = await fetch("/api/anthropic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514", max_tokens: 600,
+          messages: [{ role: "user", content: `List all books in the "${seriesQuery.trim()}" series in publication order. Include only the main series books, not companion guides or spin-offs. Respond ONLY with valid JSON (no markdown):\n{"series": "...", "author": "...", "books": [{"title": "...", "year": 1954}]}` }]
+        })
+      });
+      const data = await res.json();
+      const text = data.content?.[0]?.text || "";
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setSeriesInfo({ series: parsed.series, author: parsed.author });
+      setSeriesBooks(parsed.books.map(b => ({ ...b, include: true })));
+    } catch { setSeriesError("Couldn't find that series. Try a different name or check spelling."); }
+    setSeriesLoading(false);
+  };
+
+  const addSelectedBooks = async () => {
+    const toAdd = seriesBooks.filter(b => b.include);
+    if (!toAdd.length) return;
+    setAddingAll(true);
+    const now = Date.now();
+    const newBooks = await Promise.all(toAdd.map(async (b, i) => {
+      let meta = { cover: null, pages: null, author: seriesInfo.author, genre: "Fiction" };
+      try { meta = await fetchBookMeta(b.title, seriesInfo.author); } catch {}
+      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: 0, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: null, status: "read" };
+    }));
+    const existing = new Set(existingBooks.map(b => b.title.toLowerCase()));
+    const fresh = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
+    onAddMultiple(fresh.length ? fresh : newBooks);
+  };
+
+  const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
+  const selectedCount = seriesBooks.filter(b => b.include).length;
+
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <div><div className="modal-title">{prefill ? "Mark as Read" : "Log a Book"}</div><div className="modal-sub">Search · Rate · Annotate</div></div>
+          <div><div className="modal-title">{prefill ? "Mark as Read" : "Log a Book"}</div><div className="modal-sub">{prefill ? "Rate · Annotate" : mode === "series" ? "Add an entire series at once" : "Search · Rate · Annotate"}</div></div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
+
+        {/* Mode toggle — only shown when not in prefill (Mark as Read) flow */}
         {!prefill && (
+          <div className="status-toggle" style={{ marginBottom: 18 }}>
+            <button className={`status-btn ${mode === "book" ? "active-read" : ""}`} onClick={() => setMode("book")}>📖 Single Book</button>
+            <button className={`status-btn ${mode === "series" ? "active-read" : ""}`} onClick={() => setMode("series")}>📚 Series</button>
+          </div>
+        )}
+
+        {/* ── BOOK MODE ── */}
+        {mode === "book" && (
+          <>
+            {!prefill && (
+              <>
+                <div className="field">
+                  <label className="label">Search Open Library</label>
+                  <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); setDupWarning(null); }} placeholder="Title or author…" autoFocus />
+                </div>
+                {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
+                {results.length > 0 && !selected && (
+                  <div className="autocomplete">
+                    {results.map((r, i) => (
+                      <div key={i} className="ac-item" onClick={() => selectBook(r)}>
+                        <div className="ac-title">{r.title}</div>
+                        <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {dupWarning && <div className="dup-warning">⚠ "{dupWarning}" is already on your shelf — you can still add it again.</div>}
+            {prefill && selected && (
+              <div style={{ display: "flex", gap: 12, marginBottom: 18, padding: "12px 14px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 8 }}>
+                <div style={{ width: 42, height: 60, borderRadius: 4, overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                  {prefill.cover ? <img src={prefill.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{prefill.title}</div>
+                  <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{prefill.author}</div>
+                </div>
+              </div>
+            )}
+            <div className="field">
+              <label className="label">Status</label>
+              <div className="status-toggle">
+                <button className={`status-btn ${status === "read" ? "active-read" : ""}`} onClick={() => setStatus("read")}>✓ Read it</button>
+                <button className={`status-btn ${status === "dnf" ? "active-dnf" : ""}`} onClick={() => setStatus("dnf")}>✕ Did Not Finish</button>
+              </div>
+            </div>
+            <div className="field">
+              <label className="label">Your Rating <span style={{ color: "var(--ink4)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+              <Stars rating={rating} interactive onChange={setRating} />
+            </div>
+            <div className="field">
+              <label className="label">Personal Notes</label>
+              <textarea className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did this book do to you?" rows={4} />
+            </div>
+            <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected ? 1 : 0.4, cursor: selected ? "pointer" : "not-allowed" }}
+              onClick={() => {
+                if (!selected) return;
+                const cover = selected._prefillCover ?? (selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null);
+                onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7), status });
+                onClose();
+              }}>
+              {prefill ? "Mark as Read" : "Add to Shelf"}
+            </button>
+          </>
+        )}
+
+        {/* ── SERIES MODE ── */}
+        {mode === "series" && (
           <>
             <div className="field">
-              <label className="label">Search Open Library</label>
-              <input className="input" value={query} onChange={e => { setQuery(e.target.value); setSelected(null); setDupWarning(null); }} placeholder="Title or author…" autoFocus />
-            </div>
-            {loading && <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>searching…</div>}
-            {results.length > 0 && !selected && (
-              <div className="autocomplete">
-                {results.map((r, i) => (
-                  <div key={i} className="ac-item" onClick={() => selectBook(r)}>
-                    <div className="ac-title">{r.title}</div>
-                    <div className="ac-author">{r.author_name?.[0] || "Unknown author"}</div>
-                  </div>
-                ))}
+              <label className="label">Series Name</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input className="input" value={seriesQuery} onChange={e => setSeriesQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && findSeries()} placeholder="e.g. Lord of the Rings, Dune, Harry Potter…" autoFocus style={{ flex: 1 }} />
+                <button className="btn-primary" style={{ padding: "9px 16px", fontSize: 12, whiteSpace: "nowrap" }} onClick={findSeries} disabled={!seriesQuery.trim() || seriesLoading}>
+                  {seriesLoading ? "…" : "Find"}
+                </button>
               </div>
+            </div>
+            {seriesError && <div style={{ color: "var(--red)", fontSize: 12, marginBottom: 14 }}>{seriesError}</div>}
+            {seriesInfo && seriesBooks.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 10 }}>
+                  <span style={{ color: "var(--ink2)", fontWeight: 700 }}>{seriesInfo.series}</span> · {seriesInfo.author} · {seriesBooks.length} books
+                </div>
+                <div style={{ border: "1.5px solid var(--border)", borderRadius: 8, overflow: "hidden", marginBottom: 14 }}>
+                  {seriesBooks.map((b, i) => (
+                    <div key={i} className={`series-item ${b.include ? "" : "excluded"}`} onClick={() => setSeriesBooks(prev => prev.map((x, j) => j === i ? { ...x, include: !x.include } : x))}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ width: 16, height: 16, borderRadius: 3, border: `1.5px solid ${b.include ? "var(--cyan)" : "var(--border)"}`, background: b.include ? "var(--cyan)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {b.include && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "'DM Serif Display', serif" }}>{b.title}</div>
+                          {b.year && <div style={{ fontSize: 10, color: "var(--ink4)" }}>{b.year}</div>}
+                        </div>
+                        {existingTitles.has(b.title.toLowerCase()) && (
+                          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--ink4)", background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: 3, padding: "2px 6px", letterSpacing: "0.08em" }}>ON SHELF</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button className="btn-primary" style={{ width: "100%", padding: "11px 0", fontSize: 12, opacity: selectedCount === 0 ? 0.4 : 1, cursor: selectedCount === 0 ? "not-allowed" : "pointer" }}
+                  onClick={addingAll ? undefined : addSelectedBooks} disabled={addingAll}>
+                  {addingAll ? "Fetching covers…" : `Add ${selectedCount} book${selectedCount !== 1 ? "s" : ""} to shelf`}
+                </button>
+              </>
             )}
           </>
         )}
-        {dupWarning && (
-          <div className="dup-warning">⚠ "{dupWarning}" is already on your shelf — you can still add it again.</div>
-        )}
-        {prefill && selected && (
-          <div style={{ display: "flex", gap: 12, marginBottom: 18, padding: "12px 14px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 8 }}>
-            <div style={{ width: 42, height: 60, borderRadius: 4, overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
-              {prefill.cover ? <img src={prefill.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
-            </div>
-            <div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{prefill.title}</div>
-              <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{prefill.author}</div>
-            </div>
-          </div>
-        )}
-        <div className="field">
-          <label className="label">Status</label>
-          <div className="status-toggle">
-            <button className={`status-btn ${status === "read" ? "active-read" : ""}`} onClick={() => setStatus("read")}>✓ Read it</button>
-            <button className={`status-btn ${status === "dnf" ? "active-dnf" : ""}`} onClick={() => setStatus("dnf")}>✕ Did Not Finish</button>
-          </div>
-        </div>
-        <div className="field">
-          <label className="label">Your Rating <span style={{ color: "var(--ink4)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
-          <Stars rating={rating} interactive onChange={setRating} />
-        </div>
-        <div className="field">
-          <label className="label">Personal Notes</label>
-          <textarea className="input" value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did this book do to you?" rows={4} />
-        </div>
-        <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12, opacity: selected ? 1 : 0.4, cursor: selected ? "pointer" : "not-allowed" }}
-          onClick={() => {
-            if (!selected) return;
-            const cover = selected._prefillCover ?? (selected.cover_i ? `https://covers.openlibrary.org/b/id/${selected.cover_i}-M.jpg` : null);
-            onAdd({ id: Date.now(), title: selected.title, author: selected.author_name?.[0] || "Unknown", cover, rating, notes, genre: pickGenre(selected.subject), pages: selected.number_of_pages_median || null, dateRead: new Date().toISOString().slice(0,7), status });
-            onClose();
-          }}>
-          {prefill ? "Mark as Read" : "Add to Shelf"}
-        </button>
       </div>
     </div>
   );
@@ -1616,7 +1727,7 @@ export default function App() {
       </div>
 
       {modal === "quiz" && <QuizModal onClose={() => setModal(null)} onSave={saveQuiz} initial={quizData} />}
-      {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} />}
+      {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} onAddMultiple={newBooks => { setBooks(p => [...newBooks, ...p]); setModal(null); }} />}
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
