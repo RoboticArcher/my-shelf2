@@ -450,8 +450,6 @@ function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [addedIdx, setAddedIdx] = useState(new Set());
-  const [savedIdx, setSavedIdx] = useState(new Set());
 
   const libraryLines = (shelf) => shelf.map(b => `- "${b.title}" by ${b.author} — ${b.rating}/5. Notes: "${b.notes || "none"}"`).join("\n");
 
@@ -526,24 +524,20 @@ Respond ONLY with valid JSON (no markdown):
 
   const markRead = async (idx) => {
     const rec = recs[idx];
-    setAddedIdx(prev => new Set([...prev, idx]));
-    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
+    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, added: true, replacing: true } : r));
     const cover = await fetchCover(rec.title, rec.author).catch(() => null);
     onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7), status: "read" });
     await replaceRec(idx, recs);
-    setAddedIdx(prev => { const next = new Set(prev); next.delete(idx); return next; });
   };
 
   const saveToRead = async (idx) => {
-    if (savedIdx.has(idx)) return;
     const rec = recs[idx];
-    setSavedIdx(prev => new Set([...prev, idx]));
-    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, replacing: true } : r));
+    if (rec.saved) return;
+    setRecs(prev => prev.map((r, i) => i === idx ? { ...r, saved: true, replacing: true } : r));
     let cover = null;
     try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
     setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
     await replaceRec(idx, recs);
-    setSavedIdx(prev => { const next = new Set(prev); next.delete(idx); return next; });
   };
 
   const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
@@ -596,12 +590,12 @@ Respond ONLY with valid JSON (no markdown):
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                         <div className="match-badge">{rec.match}% match</div>
                         <button
-                          onClick={() => !addedIdx.has(i) && markRead(i)}
-                          style={{ fontSize: 10, padding: "3px 10px", background: addedIdx.has(i) ? "var(--cyan-dim)" : "var(--cyan-dim)", color: addedIdx.has(i) ? "var(--cyan)" : "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: addedIdx.has(i) ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap", opacity: addedIdx.has(i) ? 0.6 : 1 }}
-                        >{addedIdx.has(i) ? "✓ Added" : "✓ Already Read"}</button>
+                          onClick={() => !rec.added && markRead(i)}
+                          style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: rec.added ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap", opacity: rec.added ? 0.6 : 1 }}
+                        >{rec.added ? "✓ Added" : "✓ Already Read"}</button>
                         <button
                           onClick={() => saveToRead(i)}
-                          style={{ fontSize: 10, padding: "3px 10px", background: savedIdx.has(i) ? "#f0fdf4" : "var(--bg)", color: savedIdx.has(i) ? "#16a34a" : "var(--ink3)", border: `1px solid ${savedIdx.has(i) ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: savedIdx.has(i) ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
+                          style={{ fontSize: 10, padding: "3px 10px", background: rec.saved ? "#f0fdf4" : "var(--bg)", color: rec.saved ? "#16a34a" : "var(--ink3)", border: `1px solid ${rec.saved ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: rec.saved ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
                         >＋ To Read</button>
                       </div>
                     </div>
