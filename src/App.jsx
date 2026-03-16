@@ -132,11 +132,6 @@ const CSS = `
   .bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
   .bar-fill.amber { background: linear-gradient(90deg, var(--amber), #fbbf24); }
 
-  .stack-section { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 14px; }
-  .stack-num { font-size: 9px; font-weight: 700; color: var(--cyan); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 12px; }
-  .stack-item { display: flex; gap: 10px; margin-bottom: 8px; font-size: 12px; color: var(--ink2); line-height: 1.6; }
-  .stack-dash { color: var(--cyan); flex-shrink: 0; }
-
   .empty { text-align: center; padding: 80px 0; color: var(--ink4); }
   .empty-icon { font-size: 52px; margin-bottom: 16px; }
   .empty-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink3); margin-bottom: 8px; }
@@ -375,11 +370,11 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
     const newBooks = await Promise.all(toAdd.map(async (b, i) => {
       let meta = { cover: null, pages: null, author: seriesInfo.author, genre: "Fiction" };
       try { meta = await fetchBookMeta(b.title, seriesInfo.author); } catch {}
-      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: 0, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: null, status: "read" };
+      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: 0, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" };
     }));
     const existing = new Set(existingBooks.map(b => b.title.toLowerCase()));
     const fresh = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
-    onAddMultiple(fresh.length ? fresh : newBooks);
+    if (fresh.length) onAddMultiple(fresh);
   };
 
   const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
@@ -898,35 +893,6 @@ function ScanModal({ onClose, onAdd }) {
   );
 }
 
-// ── STACK MODAL ────────────────────────────────────────────────────
-function StackModal({ onClose }) {
-  const sections = [
-    { title: "1. Frontend Hosting", items: ["Netlify Free — drag-and-drop deploy or connect GitHub repo", "Build: Vite + React (this exact component as your app shell)", "Free SSL, custom domain, 100GB bandwidth/month"] },
-    { title: "2. Auth + Database", items: ["Supabase Free — Postgres + Row Level Security", "Each user's books stored with user_id FK — no data leakage", "Auth: magic link email or Google OAuth, 50K MAU free"] },
-    { title: "3. AI Layer", items: ["Netlify Functions (serverless) — keeps Anthropic API key off client", "Function receives user's book list → calls Claude → returns JSON", "Cache last result in Supabase to avoid double-billing on refresh"] },
-    { title: "4. Upgrade Path", items: ["Free: 50 books cap + 5 recs/month (check row count in Supabase)", "Paid: Stripe Checkout → webhook → flip users.plan = 'pro'", "Unlimited books + recs, export CSV, reading stats over time"] },
-    { title: "5. Total Cost at Test Scale", items: ["Netlify Free + Supabase Free + Anthropic pay-per-use ≈ ~$0–3/mo", "Only costs money when AI recs are generated (~$0.01 per session)", "No server to manage — fully serverless stack"] },
-  ];
-  return (
-    <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-wide">
-        <div className="modal-header">
-          <div><div className="modal-title">Stack Blueprint</div><div className="modal-sub">Netlify-First Architecture</div></div>
-          <button className="close-btn" onClick={onClose}>×</button>
-        </div>
-        {sections.map((s, i) => (
-          <div key={i} className="stack-section">
-            <div className="stack-num">{s.title}</div>
-            {s.items.map((item, j) => (
-              <div key={j} className="stack-item"><span className="stack-dash">→</span><span>{item}</span></div>
-            ))}
-          </div>
-        ))}
-        <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>Close</button>
-      </div>
-    </div>
-  );
-}
 
 // ── CSV IMPORT MODAL ───────────────────────────────────────────────
 function parseCSV(text) {
@@ -1006,7 +972,7 @@ function parseCSV(text) {
   return { format, rows };
 }
 
-function ImportCSVModal({ onClose, onAdd }) {
+function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
   const [stage, setStage] = useState("upload");
   const [parsed, setParsed] = useState([]);
   const [csvFormat, setCsvFormat] = useState("generic");
@@ -1035,17 +1001,21 @@ function ImportCSVModal({ onClose, onAdd }) {
   const addAll = async () => {
     setFetching(true);
     const toAdd = parsed.filter(b => b.include);
+    const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
+    const now = Date.now();
     const withMeta = await Promise.all(toAdd.map(async (b, i) => {
-      let cover = null, pages = b.pages, author = b.author;
+      let cover = null, pages = b.pages, author = b.author, genre = "General";
       try {
         const meta = await fetchBookMeta(b.title, b.author);
         cover = meta.cover;
         if (!pages) pages = meta.pages;
         if (author === "Unknown" && meta.author) author = meta.author;
+        if (meta.genre && meta.genre !== "General") genre = meta.genre;
       } catch {}
-      return { id: Date.now() + i, title: b.title, author, cover, rating: b.rating, notes: "", genre: "General", pages, dateRead: b.dateRead };
+      return { id: now + i, title: b.title, author, cover, rating: b.rating, notes: "", genre, pages, dateRead: b.dateRead };
     }));
-    withMeta.forEach(b => onAdd(b));
+    const fresh = withMeta.filter(b => !existingTitles.has(b.title.toLowerCase()));
+    onAddMultiple(fresh.length ? fresh : withMeta);
     setFetching(false);
     onClose();
   };
@@ -1410,8 +1380,8 @@ export default function App() {
 
   // Export CSV
   const exportCSV = () => {
-    const headers = ["Title","Author","Rating","Date Read","Pages","Genre","Notes"];
-    const rows = books.map(b => [b.title, b.author, b.rating || "", b.dateRead || "", b.pages || "", b.genre || "", b.notes || ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const headers = ["Title","Author","Rating","Date Read","Pages","Genre","Status","Notes"];
+    const rows = books.map(b => [b.title, b.author, b.rating || "", b.dateRead || "", b.pages || "", b.genre || "", b.status || "read", b.notes || ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -1732,7 +1702,7 @@ export default function App() {
       {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} onAddMultiple={newBooks => { setBooks(p => [...newBooks, ...p]); setModal(null); }} />}
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
-      {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} />}
+      {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} />}
       {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
       {modal?.markAsRead && (
