@@ -86,10 +86,17 @@ const CSS = `
   .genre-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); background: var(--cyan-dim); padding: 2px 8px; border-radius: 2px; }
 
   .stars { display: flex; gap: 3px; }
-  .star { font-size: 22px; transition: color 0.1s; cursor: default; line-height: 1; }
+  .star { font-size: 22px; transition: color 0.1s; cursor: default; line-height: 1; user-select: none; }
   .star.interactive { cursor: pointer; }
   .star.lit { color: var(--amber); }
   .star.dim { color: #e2e8f0; }
+  /* Half-star: left half amber, right half grey — uses background-clip on the ★ glyph */
+  .star.half {
+    background: linear-gradient(90deg, var(--amber) 50%, #e2e8f0 50%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 
   .backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(6px); z-index: 500; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.18s ease; }
   @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
@@ -232,29 +239,62 @@ function pickGenre(subjects = []) {
 }
 
 // ── STARS ──────────────────────────────────────────────────────────
+// Supports half-star ratings (0.5 increments). rating is a float or null (unrated).
+// Interactive: hover left half of a star → 0.5 preview, right half → full star.
+// Click a star: sets that value. Click same value again: clears to null.
 function Stars({ rating, interactive = false, onChange }) {
-  const [hover, setHover] = useState(0);
+  const [hover, setHover] = useState(null); // null | 0.5 | 1 | 1.5 | … | 5
   const ref = useRef();
-  const starFromTouch = (e) => {
+
+  // Determine the star value from mouse X position within a star span
+  const valueFromMouse = (e, starIndex) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    return x < rect.width / 2 ? starIndex - 0.5 : starIndex;
+  };
+
+  // Touch: calculate value from position within the whole stars container
+  const valueFromTouch = (e) => {
     const touch = e.touches[0] || e.changedTouches[0];
     const el = ref.current;
-    if (!el || !touch) return 0;
+    if (!el || !touch) return null;
     const rect = el.getBoundingClientRect();
-    return Math.min(5, Math.max(1, Math.ceil((touch.clientX - rect.left) / (rect.width / 5))));
+    const starWidth = rect.width / 5;
+    const x = Math.max(0, touch.clientX - rect.left);
+    const starIndex = Math.min(5, Math.max(1, Math.ceil(x / starWidth)));
+    const xInStar = x - (starIndex - 1) * starWidth;
+    return xInStar < starWidth / 2 ? starIndex - 0.5 : starIndex;
   };
+
+  const displayRating = hover ?? rating; // show hover preview, else saved rating
+
   return (
-    <div className="stars" ref={ref}
-      onTouchMove={interactive ? e => setHover(starFromTouch(e)) : undefined}
-      onTouchEnd={interactive ? e => { const s = starFromTouch(e); if (s) onChange?.(s); setHover(0); } : undefined}
+    <div
+      className="stars"
+      ref={ref}
+      onMouseLeave={interactive ? () => setHover(null) : undefined}
+      onTouchMove={interactive ? e => { const v = valueFromTouch(e); if (v !== null) setHover(v); } : undefined}
+      onTouchEnd={interactive ? e => {
+        const v = valueFromTouch(e);
+        if (v !== null) onChange?.(rating === v ? null : v); // tap same value = clear
+        setHover(null);
+      } : undefined}
     >
-      {[1,2,3,4,5].map(i => (
-        <span key={i}
-          className={`star ${interactive ? "interactive" : ""} ${i <= (hover || rating) ? "lit" : "dim"}`}
-          onClick={() => interactive && onChange?.(i)}
-          onMouseEnter={() => interactive && setHover(i)}
-          onMouseLeave={() => interactive && setHover(0)}
-        >★</span>
-      ))}
+      {[1,2,3,4,5].map(i => {
+        const full = displayRating != null && displayRating >= i;
+        const half = !full && displayRating != null && displayRating >= i - 0.5;
+        return (
+          <span
+            key={i}
+            className={`star ${interactive ? "interactive" : ""} ${full ? "lit" : half ? "half" : "dim"}`}
+            onMouseMove={interactive ? e => setHover(valueFromMouse(e, i)) : undefined}
+            onClick={interactive ? e => {
+              const val = valueFromMouse(e, i);
+              onChange?.(rating === val ? null : val); // click same value = clear
+            } : undefined}
+          >★</span>
+        );
+      })}
     </div>
   );
 }
@@ -302,7 +342,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
   const [query, setQuery] = useState(prefill?.title || "");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(prefill ? { title: prefill.title, author_name: [prefill.author], cover_i: null, _prefillCover: prefill.cover } : null);
-  const [rating, setRating] = useState(0);
+  const [rating, setRating] = useState(null); // null = unrated
   const [notes, setNotes] = useState("");
   const [status, setStatus] = useState("read");
   const [loading, setLoading] = useState(false);
@@ -392,7 +432,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
     const newBooks = await Promise.all(toAdd.map(async (b, i) => {
       let meta = { cover: null, pages: null, author: seriesInfo.author, genre: "Fiction" };
       try { meta = await fetchBookMeta(b.title, seriesInfo.author); } catch {}
-      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: 0, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" };
+      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: null, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" };
     }));
     const existing = new Set(existingBooks.map(b => b.title.toLowerCase()));
     const fresh = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
@@ -566,6 +606,54 @@ function DetailModal({ book, onClose, onUpdate }) {
         />
         <button className="btn-primary" style={{ width: "100%", marginTop: 12, padding: "10px 0" }} onClick={save}>Save</button>
         <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>Close</button>
+
+        {/* ── WHERE TO GET IT ── */}
+        {(() => {
+          const isbn = book.isbn;
+          // Bookshop.org — supports indie bookstores via revenue sharing
+          // TODO: Add your affiliate ID here once you sign up at https://bookshop.org/affiliates
+          //       Change the URL to: `https://bookshop.org/search?keywords=${...}&affiliate=YOUR_ID`
+          const bookshopUrl = isbn
+            ? `https://bookshop.org/search?keywords=${encodeURIComponent(isbn)}`
+            : `https://bookshop.org/search?keywords=${encodeURIComponent(book.title + " " + book.author)}`;
+          // IndieBound — shows local indie store availability
+          const indieUrl = isbn
+            ? `https://www.indiebound.org/book/${isbn}`
+            : `https://www.indiebound.org/search/book?keys=${encodeURIComponent(book.title + " " + book.author)}`;
+          return (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "var(--ink4)", letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 10 }}>
+                Where to Get It
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <a
+                  href={bookshopUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 6, color: "var(--cyan)", fontSize: 12, fontWeight: 600, textDecoration: "none" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "var(--cyan)"; e.currentTarget.style.color = "#fff"; e.currentTarget.style.borderColor = "var(--cyan)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "var(--cyan-dim)"; e.currentTarget.style.color = "var(--cyan)"; e.currentTarget.style.borderColor = "var(--cyan-mid)"; }}
+                >
+                  <span>📚</span>
+                  <span style={{ flex: 1 }}>Buy from Bookshop.org</span>
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>↗</span>
+                </a>
+                <a
+                  href={indieUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "var(--bg)", border: "1.5px solid var(--border)", borderRadius: 6, color: "var(--ink3)", fontSize: 12, fontWeight: 600, textDecoration: "none" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--cyan)"; e.currentTarget.style.color = "var(--cyan)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink3)"; }}
+                >
+                  <span>🏠</span>
+                  <span style={{ flex: 1 }}>Find it at a local indie store</span>
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>↗</span>
+                </a>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -656,7 +744,7 @@ Respond ONLY with valid JSON (no markdown):
     const rec = recs[idx];
     setRecs(prev => prev.map((r, i) => i === idx ? { ...r, added: true, replacing: true } : r));
     const cover = await fetchCover(rec.title, rec.author).catch(() => null);
-    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7), status: "read" });
+    onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating: null, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7), status: "read" });
     await replaceRec(idx, recs);
   };
 
@@ -843,7 +931,7 @@ function ScanModal({ onClose, onAddMultiple, existingBooks = [] }) {
   const toggle = (i) => setFound(f => f.map((b, j) => j === i ? { ...b, include: !b.include } : b));
 
   const addAll = () => {
-    const toAdd = found.filter(b => b.include).map(b => ({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: b.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" }));
+    const toAdd = found.filter(b => b.include).map(b => ({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: null, notes: "", genre: b.genre || "General", pages: b.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" }));
     if (toAdd.length) onAddMultiple(toAdd);
     onClose();
   };
@@ -922,15 +1010,18 @@ function ScanModal({ onClose, onAddMultiple, existingBooks = [] }) {
 
 
 // ── CSV IMPORT MODAL ───────────────────────────────────────────────
+// Client-side parseCSV kept as fallback for Amazon/generic formats.
+// GoodReads imports now go through /api/import-csv for server-side parsing.
 function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, ""); // strip UTF-8 BOM
   const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return { format: "unknown", rows: [] };
+  if (lines.length < 2) return { format: "unknown", rows: [], errorCount: 0 };
   const parseRow = (line) => {
     const cols = [];
     let cur = "", inQ = false;
     for (let i = 0; i < line.length; i++) {
       const c = line[i];
-      if (c === '"') { inQ = !inQ; }
+      if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
       else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
       else { cur += c; }
     }
@@ -941,86 +1032,128 @@ function parseCSV(text) {
   const get = (row, ...names) => {
     for (const n of names) {
       const i = headers.findIndex(h => h.includes(n));
-      if (i >= 0) return row[i] || "";
+      if (i >= 0 && i < row.length) return row[i] || "";
     }
     return "";
   };
-  // Detect format
   const hasAsin = headers.some(h => h.includes("asin"));
   const hasOrderId = headers.some(h => h.includes("order_id") || h === "orderid");
-  const hasGoodreads = headers.some(h => h.includes("exclusive_shelf") || h.includes("my_rating") || h.includes("bookshelves"));
+  const hasGoodreads = headers.some(h => h.includes("exclusive_shelf") || h.includes("my_rating"));
   let format = "generic";
   if (hasGoodreads) format = "goodreads";
   else if (hasAsin || hasOrderId) format = "amazon";
 
-  let rows;
+  let rows = [], errorCount = 0;
   if (format === "amazon") {
     rows = lines.slice(1).map(line => {
-      const row = parseRow(line);
-      const title = get(row, "title", "product_name");
-      const category = get(row, "category", "product_category");
-      const dateRaw = get(row, "order_date", "orderdate");
-      if (!title) return null;
-      if (!category.toLowerCase().includes("kindle")) return null;
-      let dateRead = new Date().toISOString().slice(0, 7);
-      if (dateRaw) {
-        // Amazon uses MM/DD/YYYY
-        const mdy = dateRaw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-        if (mdy) dateRead = `${mdy[3]}-${mdy[1].padStart(2, "0")}`;
-        else {
-          const ymd = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
-          if (ymd) dateRead = `${ymd[1]}-${ymd[2].padStart(2, "0")}`;
-          else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
+      try {
+        const row = parseRow(line);
+        const title = get(row, "title", "product_name");
+        const category = get(row, "category", "product_category");
+        const dateRaw = get(row, "order_date", "orderdate");
+        if (!title || !category.toLowerCase().includes("kindle")) return null;
+        let dateRead = new Date().toISOString().slice(0, 7);
+        if (dateRaw) {
+          const mdy = dateRaw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+          if (mdy) dateRead = `${mdy[3]}-${mdy[1].padStart(2, "0")}`;
+          else { const ymd = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/); if (ymd) dateRead = `${ymd[1]}-${ymd[2].padStart(2, "0")}`; }
         }
-      }
-      return { title, author: "Unknown", rating: 0, pages: null, dateRead, shelf: "read", include: true };
+        return { title, author: "Unknown", isbn: null, rating: null, pages: null, dateRead, status: "read", notes: null, include: true };
+      } catch { errorCount++; return null; }
     }).filter(Boolean);
   } else {
     rows = lines.slice(1).map(line => {
-      const row = parseRow(line);
-      const title = get(row, "title");
-      const author = get(row, "author");
-      const ratingRaw = get(row, "my_rating", "rating");
-      const dateRaw = get(row, "date_read", "dateread");
-      const pagesRaw = get(row, "number_of_pages", "pages", "num_pages");
-      const shelfRaw = get(row, "exclusive_shelf", "shelf", "bookshelves");
-      if (!title) return null;
-      const rating = parseInt(ratingRaw) || 0;
-      const pages = parseInt(pagesRaw) || null;
-      let dateRead = new Date().toISOString().slice(0, 7);
-      if (dateRaw) {
-        const m = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
-        if (m) dateRead = `${m[1]}-${m[2].padStart(2, "0")}`;
-        else { const y = dateRaw.match(/\d{4}/); if (y) dateRead = `${y[0]}-01`; }
-      }
-      return { title, author: author || "Unknown", rating, pages, dateRead, shelf: shelfRaw, include: true };
+      try {
+        const row = parseRow(line);
+        const title = get(row, "title");
+        const author = get(row, "author");
+        const ratingRaw = get(row, "my_rating", "rating");
+        const dateRaw = get(row, "date_read", "dateread");
+        const pagesRaw = get(row, "number_of_pages", "pages", "num_pages");
+        if (!title) return null;
+        const ratingNum = parseInt(ratingRaw) || 0;
+        let dateRead = new Date().toISOString().slice(0, 7);
+        if (dateRaw) {
+          const m = dateRaw.match(/(\d{4})[\/\-](\d{1,2})/);
+          if (m) dateRead = `${m[1]}-${m[2].padStart(2, "0")}`;
+        }
+        return { title, author: author || "Unknown", isbn: null, rating: ratingNum > 0 ? ratingNum : null, pages: parseInt(pagesRaw) || null, dateRead, status: "read", notes: null, include: true };
+      } catch { errorCount++; return null; }
     }).filter(Boolean);
   }
-  return { format, rows };
+  return { format, rows, errorCount };
 }
 
-function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
-  const [stage, setStage] = useState("upload");
+// Normalize title+author for dedup comparison
+function normalizeKey(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+}
+
+function ImportCSVModal({ onClose, onAddMultiple, onAddToRead, existingBooks = [], existingToRead = [] }) {
+  const [stage, setStage] = useState("upload"); // "upload" | "review" | "importing" | "done"
   const [parsed, setParsed] = useState([]);
   const [csvFormat, setCsvFormat] = useState("generic");
+  const [errorCount, setErrorCount] = useState(0);
   const [fetching, setFetching] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [summary, setSummary] = useState(null); // { imported, skipped, toRead, errors }
   const fileRef = useRef();
 
-  const handleFile = (file) => {
+  const handleFile = async (file) => {
     if (!file) return;
     setUploadError(null);
+
+    // 5MB guard — GoodReads exports are typically < 1MB
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("File is too large (max 5MB). GoodReads exports are usually well under 1MB — make sure you're uploading the right file.");
+      return;
+    }
+
+    setParsing(true);
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const { format, rows } = parseCSV(e.target.result);
-      if (rows.length === 0) {
-        if (format === "amazon") setUploadError("No Kindle books found in this Amazon Order History CSV. Make sure your order report includes Kindle purchases.");
-        else setUploadError("No books found. Make sure this is a Goodreads export or Amazon Order History CSV.");
-        return;
+    reader.onload = async (e) => {
+      const csvText = e.target.result;
+      try {
+        // Try server-side parser first (handles GoodReads + Amazon + generic)
+        const res = await fetch("/api/import-csv", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ csv: csvText }),
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          setUploadError(data.error);
+          setParsing(false);
+          return;
+        }
+
+        if (!data.rows || data.rows.length === 0) {
+          if (data.format === "amazon") setUploadError("No Kindle books found in this Amazon Order History CSV. Make sure your order report includes Kindle purchases.");
+          else setUploadError("No books found. Make sure this is a GoodReads export (GoodReads → My Books → Tools → Export) or Amazon Order History CSV.");
+          setParsing(false);
+          return;
+        }
+
+        setCsvFormat(data.format);
+        setErrorCount(data.errorCount || 0);
+        setParsed(data.rows);
+        setStage("review");
+      } catch {
+        // Server unavailable — fall back to client-side parser
+        const { format, rows, errorCount: ec } = parseCSV(csvText);
+        if (rows.length === 0) {
+          setUploadError("No books found. Make sure this is a GoodReads export or Amazon Order History CSV.");
+          setParsing(false);
+          return;
+        }
+        setCsvFormat(format);
+        setErrorCount(ec || 0);
+        setParsed(rows);
+        setStage("review");
       }
-      setCsvFormat(format);
-      setParsed(rows);
-      setStage("review");
+      setParsing(false);
     };
     reader.readAsText(file);
   };
@@ -1029,10 +1162,29 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
 
   const addAll = async () => {
     setFetching(true);
-    const toAdd = parsed.filter(b => b.include);
-    const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
+    setStage("importing");
+
+    const selected = parsed.filter(b => b.include);
+
+    // Separate "to-read" shelf items from read books
+    const toReadItems = selected.filter(b => b.status === "to-read");
+    const readItems = selected.filter(b => b.status !== "to-read");
+
+    // Build lookup sets for dedup — prefer ISBN match, fall back to title+author
+    const existingIsbns = new Set(existingBooks.filter(b => b.isbn).map(b => b.isbn));
+    const existingKeys = new Set(existingBooks.map(b => normalizeKey(b.title + b.author)));
+
+    let skipped = 0;
+    const freshReadItems = readItems.filter(b => {
+      if (b.isbn && existingIsbns.has(b.isbn)) { skipped++; return false; }
+      if (existingKeys.has(normalizeKey(b.title + b.author))) { skipped++; return false; }
+      return true;
+    });
+
     const now = Date.now();
-    const withMeta = await Promise.all(toAdd.map(async (b, i) => {
+
+    // Fetch covers/metadata for fresh read books
+    const withMeta = await Promise.all(freshReadItems.map(async (b, i) => {
       let cover = null, pages = b.pages, author = b.author, genre = "General";
       try {
         const meta = await fetchBookMeta(b.title, b.author);
@@ -1041,24 +1193,59 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
         if (author === "Unknown" && meta.author) author = meta.author;
         if (meta.genre && meta.genre !== "General") genre = meta.genre;
       } catch {}
-      return { id: now + i, title: b.title, author, cover, rating: b.rating, notes: "", genre, pages, dateRead: b.dateRead };
+      return {
+        id: now + i,
+        title: b.title,
+        author,
+        isbn: b.isbn || null,
+        cover,
+        rating: b.rating,
+        notes: b.notes || "",
+        genre,
+        pages,
+        dateRead: b.dateRead,
+        status: "read",
+      };
     }));
-    const fresh = withMeta.filter(b => !existingTitles.has(b.title.toLowerCase()));
-    onAddMultiple(fresh.length ? fresh : withMeta);
+
+    if (withMeta.length > 0) onAddMultiple(withMeta);
+
+    // Handle to-read items — dedup against existing TBR list, add without fetching covers
+    const existingToReadKeys = new Set(existingToRead.map(b => normalizeKey(b.title)));
+    const freshToRead = toReadItems.filter(b => !existingToReadKeys.has(normalizeKey(b.title)));
+    if (freshToRead.length > 0 && onAddToRead) {
+      const toReadObjs = freshToRead.map((b, i) => ({
+        id: now + withMeta.length + i,
+        title: b.title,
+        author: b.author,
+        cover: null,
+        addedAt: new Date().toISOString(),
+      }));
+      onAddToRead(toReadObjs);
+    }
+
+    setSummary({
+      imported: withMeta.length,
+      skipped,
+      toRead: freshToRead.length,
+      errors: errorCount,
+    });
     setFetching(false);
-    onClose();
+    setStage("done");
   };
 
-  const formatLabel = csvFormat === "amazon" ? "Amazon Order History" : csvFormat === "goodreads" ? "Goodreads Export" : "CSV Import";
+  const formatLabel = csvFormat === "amazon" ? "Amazon Order History" : csvFormat === "goodreads" ? "GoodReads Export" : "CSV Import";
   const formatColor = csvFormat === "amazon" ? "var(--amber)" : "var(--cyan)";
 
   return (
     <div className="backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-wide">
         <div className="modal-header">
-          <div><div className="modal-title">Import CSV</div><div className="modal-sub">Goodreads · Amazon Order History · Any compatible export</div></div>
+          <div><div className="modal-title">Import CSV</div><div className="modal-sub">GoodReads · Amazon Order History · Any compatible export</div></div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
+
+        {/* ── UPLOAD ── */}
         {stage === "upload" && (
           <>
             <div className="import-drop"
@@ -1068,27 +1255,47 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
               onMouseEnter={e => e.currentTarget.style.borderColor = "var(--cyan)"}
               onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border2)"}
             >
-              <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
-              <div style={{ fontSize: 13, color: "var(--ink2)", marginBottom: 4 }}>Click or drag a CSV file here</div>
-              <div style={{ fontSize: 11, color: "var(--ink4)" }}>Goodreads export · Amazon Order History</div>
+              {parsing ? (
+                <>
+                  <div className="spinner" style={{ width: 28, height: 28, margin: "0 auto 10px" }} />
+                  <div style={{ fontSize: 13, color: "var(--ink3)" }}>Reading your file…</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>📄</div>
+                  <div style={{ fontSize: 13, color: "var(--ink2)", marginBottom: 4 }}>Click or drag a CSV file here</div>
+                  <div style={{ fontSize: 11, color: "var(--ink4)" }}>GoodReads export · Amazon Order History</div>
+                </>
+              )}
             </div>
             <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
-            {uploadError && <div style={{ color: "var(--red)", fontSize: 12, marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 6 }}>{uploadError}</div>}
+            {uploadError && (
+              <div style={{ color: "var(--red)", fontSize: 12, marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 6, lineHeight: 1.7 }}>
+                {uploadError}
+              </div>
+            )}
             <div style={{ fontSize: 11, color: "var(--ink4)", lineHeight: 1.9 }}>
-              <strong style={{ color: "var(--ink3)" }}>Goodreads:</strong> Account → Import/Export → Export Library<br />
+              <strong style={{ color: "var(--ink3)" }}>GoodReads:</strong> My Books → Tools → Export Library<br />
               <strong style={{ color: "var(--ink3)" }}>Amazon:</strong> amazon.com/gp/b2b/reports → Order History Report → Kindle items auto-detected
             </div>
           </>
         )}
+
+        {/* ── REVIEW ── */}
         {stage === "review" && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
               <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: formatColor, color: csvFormat === "amazon" ? "#000" : "#fff", textTransform: "uppercase" }}>{formatLabel}</span>
               <span style={{ fontSize: 12, color: "var(--ink3)" }}>Found <strong>{parsed.length} book{parsed.length !== 1 ? "s" : ""}</strong>. Uncheck any to skip.</span>
             </div>
             {csvFormat === "amazon" && (
               <div style={{ fontSize: 11, color: "var(--ink4)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
                 📅 Dates shown are <strong>purchase dates</strong>. Authors will be looked up from OpenLibrary during import.
+              </div>
+            )}
+            {parsed.some(b => b.status === "to-read") && (
+              <div style={{ fontSize: 11, color: "var(--ink4)", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
+                📋 Books from your GoodReads "to-read" shelf will be added to your <strong>To Read list</strong>, not your main shelf.
               </div>
             )}
             <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 18, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1099,25 +1306,50 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
-                    <div style={{ fontSize: 10, color: "var(--ink3)" }}>{b.author !== "Unknown" ? b.author : <em style={{ color: "var(--ink4)" }}>author via OpenLibrary</em>}{b.rating ? ` · ${"★".repeat(b.rating)}` : ""}{b.pages ? ` · ${b.pages}pp` : ""}</div>
+                    <div style={{ fontSize: 10, color: "var(--ink3)" }}>
+                      {b.author !== "Unknown" ? b.author : <em style={{ color: "var(--ink4)" }}>author via OpenLibrary</em>}
+                      {b.rating ? ` · ${"★".repeat(Math.floor(b.rating))}${b.rating % 1 ? "½" : ""}` : ""}
+                      {b.pages ? ` · ${b.pages}pp` : ""}
+                      {b.status === "to-read" && <span style={{ marginLeft: 4, fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: "var(--ink4)", background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: 3, padding: "1px 5px" }}>TO READ</span>}
+                    </div>
                   </div>
                   <div style={{ fontSize: 10, color: "var(--ink4)", flexShrink: 0 }}>{b.dateRead}</div>
                 </div>
               ))}
             </div>
-            {fetching ? (
-              <div style={{ textAlign: "center", padding: "16px 0" }}>
-                <div className="spinner" style={{ width: 28, height: 28, margin: "0 auto 8px" }} />
-                <div style={{ fontSize: 12, color: "var(--ink3)" }}>{csvFormat === "amazon" ? "Fetching covers & authors…" : "Fetching covers…"} this may take a moment</div>
+            <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12 }} onClick={addAll}>
+              Import {parsed.filter(b => b.include).length} Books
+            </button>
+            <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={() => setStage("upload")}>Choose a different file</button>
+          </>
+        )}
+
+        {/* ── IMPORTING (progress) ── */}
+        {stage === "importing" && (
+          <div style={{ textAlign: "center", padding: "32px 0" }}>
+            <div className="spinner" />
+            <div style={{ fontSize: 13, color: "var(--ink3)", marginBottom: 4 }}>
+              {csvFormat === "amazon" ? "Fetching covers & authors…" : "Fetching covers…"}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--ink4)" }}>This may take a moment for large libraries</div>
+          </div>
+        )}
+
+        {/* ── DONE (result summary) ── */}
+        {stage === "done" && summary && (
+          <>
+            <div style={{ textAlign: "center", padding: "12px 0 24px" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
+              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: "var(--ink)", marginBottom: 20 }}>Import Complete</div>
+              <div style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 2.2, textAlign: "left", display: "inline-block" }}>
+                {summary.imported > 0 && <div>📖 <strong>{summary.imported}</strong> book{summary.imported !== 1 ? "s" : ""} added to your shelf</div>}
+                {summary.toRead > 0 && <div>📋 <strong>{summary.toRead}</strong> book{summary.toRead !== 1 ? "s" : ""} added to your To Read list</div>}
+                {summary.skipped > 0 && <div style={{ color: "var(--ink4)" }}>⊘ <strong>{summary.skipped}</strong> already on shelf — skipped</div>}
+                {summary.errors > 0 && <div style={{ color: "var(--ink4)" }}>⚠ <strong>{summary.errors}</strong> row{summary.errors !== 1 ? "s" : ""} couldn't be imported</div>}
+                {summary.imported === 0 && summary.toRead === 0 && <div style={{ color: "var(--ink4)" }}>No new books to add — everything was already on your shelf.</div>}
               </div>
-            ) : (
-              <>
-                <button className="btn-primary" style={{ width: "100%", padding: "12px 0", fontSize: 12 }} onClick={addAll}>
-                  Import {parsed.filter(b => b.include).length} Books
-                </button>
-                <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={() => setStage("upload")}>Choose a different file</button>
-              </>
-            )}
+            </div>
+            <button className="btn-primary" style={{ width: "100%", padding: "12px 0" }} onClick={onClose}>Done</button>
           </>
         )}
       </div>
@@ -1330,7 +1562,9 @@ export default function App() {
   const [books, setBooks] = useState(() => {
     try {
       const saved = localStorage.getItem("shelf-books");
-      return saved ? JSON.parse(saved) : [];
+      const loaded = saved ? JSON.parse(saved) : [];
+      // Migrate: old integer rating 0 (unrated) → null; preserve 1–5 and floats
+      return loaded.map(b => ({ ...b, rating: b.rating === 0 ? null : b.rating }));
     } catch { return []; }
   });
   const [toRead, setToRead] = useState(() => {
@@ -1394,7 +1628,7 @@ export default function App() {
   const statBooks = statsYear === "all" ? books : books.filter(b => b.dateRead?.startsWith(statsYear));
   const readBooks = statBooks.filter(b => b.status !== "dnf");
 
-  const ratedBooks = readBooks.filter(b => b.rating > 0);
+  const ratedBooks = readBooks.filter(b => b.rating != null && b.rating > 0);
   const avg = ratedBooks.length ? (ratedBooks.reduce((a,b) => a+b.rating, 0)/ratedBooks.length).toFixed(1) : "—";
   const totalPg = readBooks.reduce((a,b) => a+(b.pages||0), 0);
   const genres = [...new Set(readBooks.map(b => b.genre))];
@@ -1405,8 +1639,8 @@ export default function App() {
 
   // Export CSV
   const exportCSV = () => {
-    const headers = ["Title","Author","Rating","Date Read","Pages","Genre","Status","Notes"];
-    const rows = books.map(b => [b.title, b.author, b.rating || "", b.dateRead || "", b.pages || "", b.genre || "", b.status || "read", b.notes || ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const headers = ["Title","Author","ISBN13","Rating","Date Read","Pages","Genre","Status","Notes"];
+    const rows = books.map(b => [b.title, b.author, b.isbn || "", b.rating != null ? b.rating : "", b.dateRead || "", b.pages || "", b.genre || "", b.status || "read", b.notes || ""].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","));
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -1591,7 +1825,7 @@ export default function App() {
               <div style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 10, padding: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, color: "var(--ink4)", letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 20 }}>Rating Distribution</div>
                 {[5,4,3,2,1].map(r => {
-                  const count = readBooks.filter(b => b.rating===r).length;
+                  const count = readBooks.filter(b => b.rating != null && Math.round(b.rating) === r).length;
                   const pct = readBooks.length ? (count/readBooks.length)*100 : 0;
                   return (
                     <div key={r} className="bar-row">
@@ -1727,7 +1961,7 @@ export default function App() {
       {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} onAddMultiple={newBooks => { setBooks(p => [...newBooks, ...p]); setModal(null); }} />}
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} existingBooks={books} />}
-      {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} />}
+      {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} existingToRead={toRead} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} onAddToRead={newToRead => setToRead(p => [...newToRead, ...p])} />}
       {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} showToast={showToast} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
       {modal?.markAsRead && (
