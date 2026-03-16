@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
-// Module-level recs cache — persists while tab is open, cleared on regenerate
-let recsCache = null; // { tasteProfile, recs, bookCount }
+// Module-level recs cache — persists while tab is open, auto-invalidates when shelf or To Read list changes
+let recsCache = null; // { tasteProfile, recs, bookCount, toReadCount }
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
@@ -598,7 +598,7 @@ Respond ONLY with valid JSON (no markdown):
   };
 
   const generate = async (useCache = false) => {
-    if (useCache && recsCache && recsCache.bookCount === books.length && recsCache.recs.length > 0) {
+    if (useCache && recsCache && recsCache.bookCount === books.length && recsCache.toReadCount === toRead.length && recsCache.recs.length > 0) {
       setTasteProfile(recsCache.tasteProfile);
       setRecs(recsCache.recs);
       return;
@@ -610,7 +610,7 @@ Respond ONLY with valid JSON (no markdown):
       setTasteProfile(parsed.taste_profile);
       const newRecs = parsed.recommendations.map(r => ({ ...r, replacing: false }));
       setRecs(newRecs);
-      recsCache = { tasteProfile: parsed.taste_profile, recs: newRecs, bookCount: books.length };
+      recsCache = { tasteProfile: parsed.taste_profile, recs: newRecs, bookCount: books.length, toReadCount: toRead.length };
     } catch {
       setError("Couldn't reach the AI. Check your API key is set correctly.");
     }
