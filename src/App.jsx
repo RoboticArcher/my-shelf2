@@ -48,7 +48,7 @@ const CSS = `
   .logo-word { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink); letter-spacing: -0.02em; }
   .logo-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; color: var(--cyan); border: 1.5px solid var(--cyan); padding: 2px 7px; border-radius: 2px; text-transform: uppercase; }
   .nav-pill { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-  .nav-btn { background: none; border: none; padding: 6px 16px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
+  .nav-btn { background: none; border: none; padding: 6px 16px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; color: var(--ink3); transition: all 0.15s; white-space: nowrap; }
   .nav-btn:hover { color: var(--ink); background: var(--bg); }
   .nav-btn.active { background: var(--ink); color: #fff; }
 
@@ -82,7 +82,7 @@ const CSS = `
   .book-cover img { width: 100%; height: 100%; object-fit: cover; }
   .book-title { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--ink); margin-bottom: 2px; line-height: 1.3; }
   .book-author { font-size: 11px; color: var(--ink3); margin-bottom: 8px; }
-  .book-notes { font-size: 11px; color: var(--ink4); line-height: 1.6; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; }
+  .book-notes { font-size: 11px; color: var(--ink4); line-height: 1.6; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; padding-right: 30px; }
   .genre-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); background: var(--cyan-dim); padding: 2px 8px; border-radius: 2px; }
 
   .stars { display: flex; gap: 3px; }
@@ -198,7 +198,7 @@ const CSS = `
     .header { height: auto; min-height: 58px; padding: 10px 16px; flex-wrap: wrap; row-gap: 8px; }
     .search-row { flex-wrap: wrap; }
     .search-row .search-input { max-width: none !important; flex: 1 0 100%; }
-    .filter-row { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .filter-row { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
     .modal { padding: 22px 18px; }
   }
 
@@ -324,9 +324,31 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=key,title,author_name,cover_i,number_of_pages_median,subject`);
-        const d = await r.json();
-        setResults(d.docs || []);
+        const hasDigit = /\d/.test(query);
+        const fields = "key,title,author_name,cover_i,number_of_pages_median,subject,language";
+        const [r1, r2] = await Promise.all([
+          fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=${fields}`).then(r => r.json()),
+          hasDigit ? fetch(`https://openlibrary.org/search.json?title=${encodeURIComponent(query)}&limit=5&fields=${fields}`).then(r => r.json()) : Promise.resolve({ docs: [] }),
+        ]);
+        const seen = new Set();
+        const qLower = query.toLowerCase();
+        const merged = [...(r1.docs || []), ...(r2.docs || [])].filter(doc => {
+          if (seen.has(doc.key)) return false;
+          seen.add(doc.key);
+          return true;
+        }).sort((a, b) => {
+          // Prefer English editions
+          const aEng = (a.language || []).includes("eng") ? 0 : 1;
+          const bEng = (b.language || []).includes("eng") ? 0 : 1;
+          if (aEng !== bEng) return aEng - bEng;
+          // Prefer exact title match, then starts-with
+          const aTitle = (a.title || "").toLowerCase();
+          const bTitle = (b.title || "").toLowerCase();
+          const aExact = aTitle === qLower ? 0 : aTitle.startsWith(qLower) ? 1 : 2;
+          const bExact = bTitle === qLower ? 0 : bTitle.startsWith(qLower) ? 1 : 2;
+          return aExact - bExact;
+        });
+        setResults(merged.slice(0, 8));
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
@@ -550,7 +572,7 @@ function DetailModal({ book, onClose, onUpdate }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead }) {
+function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead, showToast }) {
   const [tasteProfile, setTasteProfile] = useState(null);
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -645,10 +667,11 @@ Respond ONLY with valid JSON (no markdown):
     let cover = null;
     try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
     setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
+    showToast?.(`✓ Added "${rec.title}" to your reading list`);
     await replaceRec(idx, recs);
   };
 
-  const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
+  const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); showToast?.("✓ Prompt copied to clipboard"); setTimeout(() => setCopied(false), 2500); };
 
   useEffect(() => { generate(true); }, []);
 
@@ -751,7 +774,7 @@ async function fetchBookMeta(title, author) {
 }
 
 // ── SCAN MODAL ─────────────────────────────────────────────────────
-function ScanModal({ onClose, onAdd }) {
+function ScanModal({ onClose, onAddMultiple, existingBooks = [] }) {
   const [stage, setStage] = useState("upload");
   const [preview, setPreview] = useState(null);
   const [imageData, setImageData] = useState(null);
@@ -802,10 +825,12 @@ function ScanModal({ onClose, onAdd }) {
       const text = data.content?.[0]?.text || "";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
       const now = Date.now();
+      const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
       const withCovers = await Promise.all(parsed.books.map(async (b, i) => {
         let cover = null, pages = null;
         try { ({ cover, pages } = await fetchBookMeta(b.title, b.author)); } catch {}
-        return { ...b, id: now + i, include: true, cover, pages };
+        const onShelf = existingTitles.has(b.title.toLowerCase());
+        return { ...b, id: now + i, include: !onShelf, onShelf, cover, pages };
       }));
       setFound(withCovers);
       setStage("review");
@@ -818,9 +843,8 @@ function ScanModal({ onClose, onAdd }) {
   const toggle = (i) => setFound(f => f.map((b, j) => j === i ? { ...b, include: !b.include } : b));
 
   const addAll = () => {
-    found.filter(b => b.include).forEach(b => {
-      onAdd({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: b.pages || null, dateRead: new Date().toISOString().slice(0,7) });
-    });
+    const toAdd = found.filter(b => b.include).map(b => ({ id: b.id, title: b.title, author: b.author, cover: b.cover || null, rating: 0, notes: "", genre: b.genre || "General", pages: b.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" }));
+    if (toAdd.length) onAddMultiple(toAdd);
     onClose();
   };
 
@@ -866,7 +890,7 @@ function ScanModal({ onClose, onAdd }) {
         )}
         {stage === "review" && (
           <>
-            <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 16 }}>Found <strong>{found.length} books</strong>. Uncheck any that are wrong, then add them all at once.</div>
+            <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 16 }}>Found <strong>{found.length} books</strong>. Books already on your shelf are unchecked. Add the rest at once.</div>
             <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 20, display: "flex", flexDirection: "column", gap: 8 }}>
               {found.map((b, i) => (
                 <div key={i} onClick={() => toggle(i)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: b.include ? "var(--cyan-dim)" : "var(--bg)", border: `1.5px solid ${b.include ? "var(--cyan-mid)" : "var(--border)"}`, borderRadius: 6, cursor: "pointer", transition: "all 0.15s", minHeight: 68 }}>
@@ -879,7 +903,10 @@ function ScanModal({ onClose, onAdd }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
                     <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{b.author || "Unknown"}</div>
-                    <div style={{ fontSize: 10, color: "var(--cyan)", fontWeight: 600, marginTop: 3, letterSpacing: "0.06em" }}>{b.genre || "General"}</div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
+                      <div style={{ fontSize: 10, color: "var(--cyan)", fontWeight: 600, letterSpacing: "0.06em" }}>{b.genre || "General"}</div>
+                      {b.onShelf && <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: "var(--ink4)", background: "var(--bg)", border: "1px solid var(--border2)", padding: "1px 6px", borderRadius: 2, textTransform: "uppercase" }}>On Shelf</div>}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -977,16 +1004,18 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
   const [parsed, setParsed] = useState([]);
   const [csvFormat, setCsvFormat] = useState("generic");
   const [fetching, setFetching] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
   const fileRef = useRef();
 
   const handleFile = (file) => {
     if (!file) return;
+    setUploadError(null);
     const reader = new FileReader();
     reader.onload = (e) => {
       const { format, rows } = parseCSV(e.target.result);
       if (rows.length === 0) {
-        if (format === "amazon") alert("No Kindle books found in this Amazon Order History CSV. Make sure your order report includes Kindle purchases.");
-        else alert("No books found. Make sure this is a Goodreads export or Amazon Order History CSV.");
+        if (format === "amazon") setUploadError("No Kindle books found in this Amazon Order History CSV. Make sure your order report includes Kindle purchases.");
+        else setUploadError("No books found. Make sure this is a Goodreads export or Amazon Order History CSV.");
         return;
       }
       setCsvFormat(format);
@@ -1044,6 +1073,7 @@ function ImportCSVModal({ onClose, onAddMultiple, existingBooks = [] }) {
               <div style={{ fontSize: 11, color: "var(--ink4)" }}>Goodreads export · Amazon Order History</div>
             </div>
             <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+            {uploadError && <div style={{ color: "var(--red)", fontSize: 12, marginBottom: 12, padding: "10px 14px", background: "#fef2f2", border: "1.5px solid #fecaca", borderRadius: 6 }}>{uploadError}</div>}
             <div style={{ fontSize: 11, color: "var(--ink4)", lineHeight: 1.9 }}>
               <strong style={{ color: "var(--ink3)" }}>Goodreads:</strong> Account → Import/Export → Export Library<br />
               <strong style={{ color: "var(--ink3)" }}>Amazon:</strong> amazon.com/gp/b2b/reports → Order History Report → Kindle items auto-detected
@@ -1108,9 +1138,18 @@ function AddToReadModal({ onClose, onAdd }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=key,title,author_name,cover_i`);
+        const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&sort=editions&limit=7&fields=key,title,author_name,cover_i,language`);
         const d = await r.json();
-        setResults(d.docs || []);
+        const qLower = query.toLowerCase();
+        const sorted = (d.docs || []).sort((a, b) => {
+          const aEng = (a.language || []).includes("eng") ? 0 : 1;
+          const bEng = (b.language || []).includes("eng") ? 0 : 1;
+          if (aEng !== bEng) return aEng - bEng;
+          const aTitle = (a.title || "").toLowerCase();
+          const bTitle = (b.title || "").toLowerCase();
+          return (aTitle === qLower ? 0 : aTitle.startsWith(qLower) ? 1 : 2) - (bTitle === qLower ? 0 : bTitle.startsWith(qLower) ? 1 : 2);
+        });
+        setResults(sorted);
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
@@ -1154,31 +1193,43 @@ function BookSearchInput({ value, onChange }) {
   const [query, setQuery] = useState(value?.title || "");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  // isSelected: true when a book has been chosen (either saved from before or just picked)
+  // In selected state we don't fire live searches — user must clear first
+  const [isSelected, setIsSelected] = useState(!!(value?.title));
   const timer = useRef();
 
   useEffect(() => {
-    if (!query || query.length < 2) { setResults([]); return; }
+    if (isSelected || !query || query.length < 2) { setResults([]); return; }
     clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       setLoading(true);
       try {
         const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&fields=title,author_name`);
         const d = await r.json();
-        setResults(d.docs || []);
+        // Deduplicate by title+author
+        const seen = new Set();
+        const deduped = (d.docs || []).filter(doc => {
+          const key = (doc.title + "|" + (doc.author_name?.[0] || "")).toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setResults(deduped);
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
-  }, [query]);
+  }, [query, isSelected]);
 
   const select = (result) => {
     const title = result.title;
     const author = result.author_name?.[0] || "";
     setQuery(title);
     setResults([]);
+    setIsSelected(true);
     onChange({ title, author });
   };
 
-  const clear = () => { setQuery(""); setResults([]); onChange({ title: "", author: "" }); };
+  const clear = () => { setQuery(""); setResults([]); setIsSelected(false); onChange({ title: "", author: "" }); };
 
   return (
     <div style={{ flex: 1 }}>
@@ -1187,7 +1238,7 @@ function BookSearchInput({ value, onChange }) {
           className="input"
           placeholder="Search a book…"
           value={query}
-          onChange={e => { setQuery(e.target.value); if (!e.target.value) clear(); }}
+          onChange={e => { setQuery(e.target.value); setIsSelected(false); if (!e.target.value) clear(); }}
           style={{ width: "100%", paddingRight: value?.title ? 28 : undefined }}
         />
         {value?.title && (
@@ -1315,35 +1366,9 @@ export default function App() {
     try { localStorage.setItem("shelf-goal", String(readingGoal)); } catch {}
   }, [readingGoal]);
 
-  const saveQuiz = async (data) => {
+  const saveQuiz = (data) => {
     try { localStorage.setItem("shelf-quiz", JSON.stringify(data)); } catch {}
     setQuizData(data);
-
-    // Auto-add favourite books from DNA quiz to the shelf
-    const favs = data.favBooks.filter(b => b.title.trim());
-    if (favs.length === 0) return;
-    const now = Date.now();
-    const newBooks = await Promise.all(favs.map(async (fav, i) => {
-      let meta = { cover: null, pages: null, author: null, genre: "General" };
-      try { meta = await fetchBookMeta(fav.title, fav.author || ""); } catch {}
-      return {
-        id: now + i,
-        title: fav.title,
-        author: fav.author || meta.author || "Unknown",
-        cover: meta.cover || null,
-        rating: 0,
-        notes: "",
-        genre: meta.genre || "General",
-        pages: meta.pages || null,
-        dateRead: null,
-        status: "read",
-      };
-    }));
-    setBooks(prev => {
-      const existing = new Set(prev.map(b => b.title.toLowerCase()));
-      const toAdd = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
-      return toAdd.length ? [...prev, ...toAdd] : prev;
-    });
   };
 
   const searched = books.filter(b =>
@@ -1357,7 +1382,7 @@ export default function App() {
     .filter(b => !filterGenre || (filterGenre === "__dnf__" ? b.status === "dnf" : b.genre === filterGenre))
     .sort((a, b) => {
       if (sortBy === "title") return a.title.localeCompare(b.title);
-      if (sortBy === "author") return a.author.localeCompare(b.author);
+      if (sortBy === "author") return (a.author.split(" ").pop() || "").localeCompare(b.author.split(" ").pop() || "");
       if (sortBy === "rating-high") return (b.rating || 0) - (a.rating || 0);
       if (sortBy === "rating-low") return (a.rating || 0) - (b.rating || 0);
       if (sortBy === "date-read") return (b.dateRead || "").localeCompare(a.dateRead || "");
@@ -1701,9 +1726,9 @@ export default function App() {
       {modal === "quiz" && <QuizModal onClose={() => setModal(null)} onSave={saveQuiz} initial={quizData} />}
       {modal === "add" && <AddModal onClose={() => setModal(null)} existingBooks={books} onAdd={b => { setBooks(p => [b,...p]); setModal(null); }} onAddMultiple={newBooks => { setBooks(p => [...newBooks, ...p]); setModal(null); }} />}
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
-      {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAdd={b => setBooks(p => [b,...p])} />}
+      {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} existingBooks={books} />}
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} showToast={showToast} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
       {modal?.markAsRead && (
         <AddModal
