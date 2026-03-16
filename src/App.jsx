@@ -531,6 +531,7 @@ Respond ONLY with valid JSON (no markdown):
     const cover = await fetchCover(rec.title, rec.author).catch(() => null);
     onAdd({ id: Date.now(), title: rec.title, author: rec.author, cover, rating: 0, notes: "", genre: "General", pages: null, dateRead: new Date().toISOString().slice(0,7), status: "read" });
     await replaceRec(idx, recs);
+    setAddedIdx(prev => { const next = new Set(prev); next.delete(idx); return next; });
   };
 
   const saveToRead = async (idx) => {
@@ -542,6 +543,7 @@ Respond ONLY with valid JSON (no markdown):
     try { ({ cover } = await fetchBookMeta(rec.title, rec.author)); } catch {}
     setToRead(prev => [...prev, { id: Date.now(), title: rec.title, author: rec.author, cover, addedAt: new Date().toISOString() }]);
     await replaceRec(idx, recs);
+    setSavedIdx(prev => { const next = new Set(prev); next.delete(idx); return next; });
   };
 
   const copyPrompt = () => { navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2500); };
