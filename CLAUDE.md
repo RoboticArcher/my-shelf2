@@ -41,6 +41,7 @@ Always run `npm run build` before committing to catch errors.
 | Styling | CSS-in-JS (template literal), no Tailwind |
 | AI | Anthropic API via `/api/anthropic` serverless endpoint (Vercel) |
 | Book data | OpenLibrary API (covers, pages, author lookup) |
+| CSV parsing | `/api/import-csv` serverless endpoint (Vercel) |
 | Persistence | localStorage (no backend database) |
 | Hosting | Vercel |
 
@@ -71,13 +72,13 @@ Always run `npm run build` before committing to catch errors.
 ## Components (all in App.jsx)
 | Component | Purpose |
 |---|---|
-| `Stars` | 1–5 star rating display + interactive. Supports touch (swipe to rate on mobile). |
+| `Stars` | Half-star rating display + interactive (0.5–5.0, null = unrated). Hover left half of star = half preview; right half = full. Click same value = clear. Supports touch. |
 | `BookCard` | Grid card for a logged book. Shows DNF badge + reduced opacity for DNF books. |
 | `AddModal` | Log a new book (supports `prefill` prop for Mark as Read flow). Has status toggle (Read / DNF). Duplicate detection warns if title already on shelf. |
-| `DetailModal` | View/edit a logged book's notes, rating, and status (Read / DNF). |
+| `DetailModal` | View/edit a logged book's notes, rating, and status (Read / DNF). Includes "Where to Get It" section with Bookshop.org and IndieBound links. |
 | `RecsModal` | AI recommendations panel — fetches 4 recs, replaces individually when marked read or saved to To Read. Results cached in module-level `recsCache`. |
 | `ScanModal` | Photo scan a bookshelf via Claude vision API |
-| `ImportCSVModal` | Import Goodreads CSV or Amazon Order History CSV |
+| `ImportCSVModal` | Import GoodReads or Amazon Order History CSV. Sends file to `/api/import-csv` for server-side parsing. Shows review list, then result summary (imported / skipped / to-read / errors). |
 | `AddToReadModal` | Search OpenLibrary and save to To Read list |
 | `BookSearchInput` | Autocomplete book search input (used in QuizModal) |
 | `QuizModal` | Reading DNA quiz — 5 fave books + top 3 genres |
@@ -87,8 +88,10 @@ Always run `npm run build` before committing to catch errors.
 ## Module-Level Helpers & Variables
 ```js
 fetchCover(title, author)        // returns cover URL or null
-fetchBookMeta(title, author)     // returns { cover, pages, author } from OpenLibrary
-parseCSV(text)                   // returns { format, rows } — detects goodreads/amazon/generic
+fetchBookMeta(title, author)     // returns { cover, pages, author, genre } from OpenLibrary
+parseCSV(text)                   // client-side fallback parser — returns { format, rows, errorCount }
+                                 // ImportCSVModal uses /api/import-csv (server) first; falls back to this
+normalizeKey(str)                // lowercases + strips non-alphanum — used for dedup comparison
 pickGenre(subjects[])            // maps OpenLibrary subjects → app genre string
 let recsCache = null             // { tasteProfile, recs, bookCount } — persists while tab open
 ```
@@ -163,21 +166,52 @@ To-read items have `addedAt` field. Logged books do not. Use this to distinguish
 ---
 
 ## CSV Import (ImportCSVModal)
-`parseCSV` auto-detects format:
-- **Goodreads** — identified by `exclusive_shelf` / `my_rating` headers
-- **Amazon Order History** — identified by `asin` / `order_id` headers; filters to Kindle-category rows only; uses order date as read date proxy; looks up author via OpenLibrary
-- **Generic** — fallback
 
-Review stage shows a coloured format badge (amber = Amazon, cyan = Goodreads).
+### Server-side parsing — `/api/import-csv.js`
+`ImportCSVModal` sends the CSV to `/api/import-csv` (POST, JSON body `{ csv: "..." }`). The server function handles all format detection and parsing, then returns `{ format, rows, errorCount, error }`. Falls back to client-side `parseCSV` if the server is unreachable.
+
+Format auto-detection:
+- **GoodReads** — requires `title`, `author`, `exclusive_shelf`, `my_rating` headers to pass validation
+- **Amazon Order History** — identified by `asin` / `order_id`; filters to Kindle-category rows only
+- **Generic** — best-effort fallback
+
+### GoodReads field mapping
+| GoodReads column | my-shelf field |
+|---|---|
+| Title | title |
+| Author l-f | author (converted from "Last, First" format) |
+| ISBN13 / ISBN | isbn |
+| My Rating | rating (0 → null, 1–5 stored as float) |
+| My Review | notes (HTML tags stripped) |
+| Date Read / Date Added | dateRead |
+| Number of Pages | pages |
+| Exclusive Shelf | status: `read`→read, `currently-reading`→read, `to-read`→TBR list |
+
+### Deduplication (addAll)
+1. ISBN13 match against existing shelf books → skip if found
+2. Normalized title+author match → skip if found
+3. "to-read" shelf items → added to TBR list (not shelf), deduped against existing TBR
+
+### Result summary
+After import completes, shows: books added to shelf / added to To Read / already existed (skipped) / rows that errored
+
+### Guards
+- 5MB file size limit checked client-side before sending
+- UTF-8 BOM stripped server-side
+- Malformed rows counted but never crash the import
+
+Review stage shows a coloured format badge (amber = Amazon, cyan = GoodReads).
 
 ---
 
 ## Book Data Shape
 ```js
 // Logged book (shelf-books)
-{ id, title, author, cover, rating, notes, genre, pages, dateRead, status }
+{ id, title, author, isbn, cover, rating, notes, genre, pages, dateRead, status }
 // status: "read" (default) | "dnf" (Did Not Finish)
-// rating: 0 = unrated (allowed), 1–5 = rated
+// rating: null = unrated | 0.5–5.0 (float, half-star precision)
+// isbn: ISBN-13 string | null (populated on GoodReads import; used for bookstore links + dedup)
+// Migration: old rating=0 values are converted to null on load
 
 // To-read item (shelf-toread)
 { id, title, author, cover, addedAt }
@@ -224,7 +258,7 @@ Review stage shows a coloured format badge (amber = Amazon, cyan = Goodreads).
 - **Sort + genre filter** — sort dropdown + genre chips + DNF filter chip on shelf view
 - **Reading goal** — annual goal bar with progress, stored in `shelf-goal` localStorage key
 - **Books by month chart** — bar chart of reading pace for selected year
-- **Export CSV** — download all shelf data as a CSV file
+- **Export CSV** — download all shelf data as a CSV file (now includes isbn13 + status columns)
 - **Duplicate detection** — warns in AddModal if a title already exists on the shelf
 - **AI recs caching** — recs persist across modal opens; Regenerate button forces refresh
 - **Top Authors stat** — bar chart of most-read authors in stats view
@@ -232,6 +266,9 @@ Review stage shows a coloured format badge (amber = Amazon, cyan = Goodreads).
 - **Mobile responsive** — wrapping header, full-width search, scrollable filter row, touch stars
 - **Series import** — Log an entire book series at once via AI lookup; dedup against existing shelf
 - **Scan shelf** — Photo → Claude vision → books identified from spines → review + bulk add
+- **Half-star ratings** — Stars component supports 0.5–5.0 float ratings. Hover left/right half of star for half/full preview. Click same value = clear. CSS gradient half-star display. Rating=0 migrated to null on load. *(2026-03-16)*
+- **GoodReads CSV import (server-side)** — `/api/import-csv.js` handles parsing; full GoodReads column mapping incl. ISBN13, My Review, author name normalization. "to-read" shelf → TBR list. Dedup by ISBN then title+author. Result summary. 5MB guard + BOM stripping. *(2026-03-16)*
+- **Indie bookstore links** — "Where to Get It" section in DetailModal. Bookshop.org (ISBN or title search) + IndieBound links. Both open in new tab. TODO comment for Bookshop.org affiliate ID. *(2026-03-16)*
 
 ---
 
