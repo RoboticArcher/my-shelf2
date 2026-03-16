@@ -572,10 +572,12 @@ function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead }) {
     return [favLines, genreLines].filter(Boolean).join("\n\n");
   })() : "";
 
+  const toReadTitles = toRead.map(b => `"${b.title}"`).join(", ");
+
   const prompt = `You are a literary taste analyst. Based on this reader's stated preferences and library, recommend 4 books they haven't read.${quizSection ? `\n\nCORE PREFERENCES — factor these in most heavily:\n${quizSection}` : ""}
 
 Library (use ratings and notes to fine-tune, but never override the core preferences above):
-${libraryLines(books)}
+${libraryLines(books)}${toReadTitles ? `\n\nAlready on their To Read list — do NOT recommend these:\n${toReadTitles}` : ""}
 
 Respond ONLY with valid JSON (no markdown):
 {
@@ -616,7 +618,7 @@ Respond ONLY with valid JSON (no markdown):
   };
 
   const replaceRec = async (idx, currentRecs) => {
-    const exclude = [...books.map(b => b.title), ...currentRecs.map(r => r.title)].map(t => `"${t}"`).join(", ");
+    const exclude = [...books.map(b => b.title), ...toRead.map(b => b.title), ...currentRecs.map(r => r.title)].map(t => `"${t}"`).join(", ");
     const replacePrompt = `You are a literary taste analyst. Recommend exactly 1 book for this reader. Do NOT suggest any of these titles: ${exclude}.
 
 Library:
