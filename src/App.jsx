@@ -4,197 +4,192 @@ import { useState, useEffect, useRef } from "react";
 let recsCache = null; // { tasteProfile, recs, bookCount, toReadCount }
 
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@300;400;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:       #f5f7fa;
-    --surface:  #ffffff;
-    --border:   #dde3ec;
-    --border2:  #c8d2e0;
-    --cyan:     #00b4d8;
-    --cyan-dim: #e0f7fc;
-    --cyan-mid: #90e0ef;
-    --amber:    #f59e0b;
-    --red:      #ef4444;
-    --ink:      #0f172a;
-    --ink2:     #334155;
-    --ink3:     #64748b;
-    --ink4:     #94a3b8;
-    --grid-col: rgba(0,180,216,0.06);
+    --bg:       #FAF6F0;
+    --surface:  #F4EDE4;
+    --border:   #E2D5C8;
+    --border2:  #C8B8A8;
+    --cyan:     #A47764;
+    --cyan-dim: rgba(164,119,100,0.12);
+    --cyan-mid: #C49A7A;
+    --amber:    #C4714A;
+    --red:      #C45B5B;
+    --ink:      #1C1410;
+    --ink2:     #3D2B1F;
+    --ink3:     #6B5744;
+    --ink4:     #A47764;
+    --linen:    #F0E8DC;
+    --forest:   #3D6B4F;
   }
 
-  body { background: var(--bg); color: var(--ink); font-family: 'JetBrains Mono', monospace; }
-
-  .scanlines {
-    position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.018) 2px, rgba(0,0,0,0.018) 4px);
-  }
-  .grid-bg {
-    position: fixed; inset: 0; pointer-events: none; z-index: 0;
-    background-image: linear-gradient(var(--grid-col) 1px, transparent 1px), linear-gradient(90deg, var(--grid-col) 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
-  .orbit-ring { position: fixed; pointer-events: none; z-index: 1; border: 1px solid rgba(0,180,216,0.07); border-radius: 50%; }
+  body { background: var(--bg); color: var(--ink); font-family: 'Inter', system-ui, sans-serif; font-size: 16px; line-height: 1.6; }
 
   .header {
     position: sticky; top: 0; z-index: 200;
-    background: rgba(245,247,250,0.92); backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border); height: 58px;
+    background: rgba(244,237,228,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border); height: 60px;
     display: flex; align-items: center; justify-content: space-between; padding: 0 28px;
   }
-  .logo { display: flex; align-items: baseline; gap: 10px; }
-  .logo-word { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink); letter-spacing: -0.02em; }
-  .logo-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.18em; color: var(--cyan); border: 1.5px solid var(--cyan); padding: 2px 7px; border-radius: 2px; text-transform: uppercase; }
-  .nav-pill { display: flex; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-  .nav-btn { background: none; border: none; padding: 6px 16px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; color: var(--ink3); transition: all 0.15s; white-space: nowrap; }
-  .nav-btn:hover { color: var(--ink); background: var(--bg); }
-  .nav-btn.active { background: var(--ink); color: #fff; }
+  .logo { display: flex; align-items: baseline; gap: 2px; }
+  .logo-word { font-family: 'Playfair Display', Georgia, serif; font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -0.02em; }
+  .logo-word span { color: var(--cyan); }
+  .logo-badge { font-size: 9px; font-weight: 600; letter-spacing: 0.16em; color: var(--ink4); padding: 2px 7px; text-transform: uppercase; }
+  .nav-pill { display: flex; background: var(--linen); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .nav-btn { background: none; border: none; padding: 6px 16px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--ink3); transition: all 0.15s; white-space: nowrap; }
+  .nav-btn:hover { color: var(--ink); background: var(--border); }
+  .nav-btn.active { background: var(--ink); color: #F0E8DC; }
 
-  .btn-primary { background: var(--cyan); color: var(--surface); border: none; border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; padding: 8px 18px; cursor: pointer; transition: background 0.15s, transform 0.1s; text-transform: uppercase; box-shadow: 0 2px 8px rgba(0,180,216,0.25); }
-  .btn-primary:hover { background: #0096c7; transform: translateY(-1px); }
-  .btn-ghost { background: none; border: 1.5px solid var(--border2); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 6px 14px; cursor: pointer; color: var(--ink3); transition: all 0.15s; text-transform: uppercase; }
+  .btn-primary { background: var(--cyan); color: var(--linen); border: none; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; padding: 9px 20px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+  .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-ghost { background: none; border: 1.5px solid var(--border2); border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; padding: 7px 14px; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
   .btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
 
-  .stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .stat-bar { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 28px; box-shadow: 0 1px 4px rgba(28,20,16,0.08); }
   .stat-cell { padding: 18px 22px; border-right: 1px solid var(--border); position: relative; }
   .stat-cell:last-child { border-right: none; }
   .stat-cell::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); opacity: 0; }
   .stat-cell:hover::before { opacity: 1; }
-  .stat-label { font-size: 9px; font-weight: 600; color: var(--ink4); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 6px; }
-  .stat-value { font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--ink); line-height: 1; }
+  .stat-label { font-size: 9px; font-weight: 600; color: var(--ink4); letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 6px; font-family: 'Inter', sans-serif; }
+  .stat-value { font-family: 'Playfair Display', Georgia, serif; font-size: 28px; color: var(--ink); line-height: 1; }
 
   .search-row { display: flex; gap: 10px; margin-bottom: 24px; }
-  .search-input { flex: 1; padding: 10px 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink); outline: none; transition: border-color 0.15s; }
-  .search-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,180,216,0.1); }
+  .search-input { flex: 1; padding: 10px 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px; color: var(--ink); outline: none; transition: border-color 0.15s; }
+  .search-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(164,119,100,0.15); }
   .search-input::placeholder { color: var(--ink4); }
-  .rec-btn { padding: 10px 22px; border-radius: 6px; border: 1.5px solid var(--cyan); background: var(--cyan-dim); color: var(--cyan); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer; text-transform: uppercase; transition: all 0.15s; white-space: nowrap; }
-  .rec-btn:hover:not(:disabled) { background: var(--cyan); color: #fff; box-shadow: 0 2px 12px rgba(0,180,216,0.3); }
+  .rec-btn { padding: 9px 22px; border-radius: 8px; border: 1.5px solid var(--forest); background: rgba(61,107,79,0.1); color: var(--forest); font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .rec-btn:hover:not(:disabled) { background: var(--forest); color: var(--linen); }
   .rec-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px,1fr)); gap: 14px; }
-  .book-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 16px; cursor: pointer; display: flex; gap: 14px; transition: all 0.18s; position: relative; overflow: hidden; }
-  .book-card::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); transform: scaleX(0); transition: transform 0.2s; }
-  .book-card:hover { border-color: var(--cyan-mid); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,180,216,0.12); }
-  .book-card:hover::after { transform: scaleX(1); }
-  .book-cover { width: 58px; height: 84px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 24px; }
+  /* Cover-first vertical book grid */
+  .book-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; }
+  @media (max-width: 1024px) { .book-grid { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 768px) { .book-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; } }
+  .book-card { background: transparent; border: none; border-radius: 0; padding: 0; cursor: pointer; display: flex; flex-direction: column; transition: transform 0.2s; position: relative; }
+  .book-card:hover { transform: translateY(-4px); }
+  .book-card::after { display: none; }
+  .book-cover { width: 100%; aspect-ratio: 2/3; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: var(--surface); border: none; display: flex; align-items: center; justify-content: center; font-size: 36px; box-shadow: 0 2px 10px rgba(28,20,16,0.18); }
   .book-cover img { width: 100%; height: 100%; object-fit: cover; }
-  .book-title { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--ink); margin-bottom: 2px; line-height: 1.3; }
-  .book-author { font-size: 11px; color: var(--ink3); margin-bottom: 8px; }
-  .book-notes { font-size: 11px; color: var(--ink4); line-height: 1.6; margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; padding-right: 30px; }
-  .genre-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cyan); background: var(--cyan-dim); padding: 2px 8px; border-radius: 2px; }
+  .book-title { font-family: 'Playfair Display', Georgia, serif; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 2px; line-height: 1.3; margin-top: 10px; }
+  .book-author { font-size: 11px; color: var(--ink3); margin-bottom: 4px; font-family: 'Inter', sans-serif; }
+  .book-notes { font-size: 11px; color: var(--ink4); line-height: 1.6; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; }
+  .genre-tag { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cyan); background: var(--cyan-dim); padding: 2px 8px; border-radius: 10px; font-family: 'Inter', sans-serif; }
 
-  .stars { display: flex; gap: 3px; }
-  .star { font-size: 22px; transition: color 0.1s; cursor: default; line-height: 1; user-select: none; }
+  /* Stars: 14px on cards, 22px in .stars-lg context (modals / detail) */
+  .stars { display: flex; gap: 2px; }
+  .star { font-size: 14px; transition: color 0.1s; cursor: default; line-height: 1; user-select: none; }
+  .stars-lg .star { font-size: 22px; }
   .star.interactive { cursor: pointer; }
   .star.lit { color: var(--amber); }
-  .star.dim { color: #e2e8f0; }
-  /* Half-star: left half amber, right half grey — uses background-clip on the ★ glyph */
+  .star.dim { color: var(--border); }
+  /* Half-star: left half terracotta, right half sand — uses background-clip on the ★ glyph */
   .star.half {
-    background: linear-gradient(90deg, var(--amber) 50%, #e2e8f0 50%);
+    background: linear-gradient(90deg, var(--amber) 50%, var(--border) 50%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  .backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(6px); z-index: 500; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.18s ease; }
+  .backdrop { position: fixed; inset: 0; background: rgba(28,20,16,0.55); backdrop-filter: blur(6px); z-index: 500; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.18s ease; }
   @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
-  .modal { background: var(--surface); border: 1.5px solid var(--border); border-radius: 14px; padding: 32px; width: min(500px, 94vw); max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,0.18); animation: slideUp 0.2s ease; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: min(500px, 94vw); max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(28,20,16,0.2); animation: slideUp 0.2s ease; }
   .modal-wide { width: min(620px, 94vw); }
   @keyframes slideUp { from { opacity:0; transform: translateY(16px) } to { opacity:1; transform: translateY(0) } }
   .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 26px; }
-  .modal-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--ink); }
-  .modal-sub { font-size: 10px; color: var(--ink4); letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
+  .modal-title { font-family: 'Playfair Display', Georgia, serif; font-size: 24px; font-weight: 600; color: var(--ink); }
+  .modal-sub { font-size: 10px; color: var(--ink4); letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; font-family: 'Inter', sans-serif; }
   .close-btn { background: none; border: none; font-size: 22px; color: var(--ink4); cursor: pointer; line-height: 1; padding: 0 4px; }
   .close-btn:hover { color: var(--ink); }
 
   .field { margin-bottom: 18px; }
-  .label { display: block; font-size: 10px; font-weight: 600; color: var(--ink3); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 7px; }
-  .input { width: 100%; padding: 10px 13px; background: var(--bg); border: 1.5px solid var(--border); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink); outline: none; transition: border-color 0.15s; }
-  .input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,180,216,0.1); background: #fff; }
+  .label { display: block; font-size: 10px; font-weight: 600; color: var(--ink3); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 7px; font-family: 'Inter', sans-serif; }
+  .input { width: 100%; padding: 10px 13px; background: var(--bg); border: 1.5px solid var(--border); border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px; color: var(--ink); outline: none; transition: border-color 0.15s; }
+  .input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(164,119,100,0.15); }
   .input::placeholder { color: var(--ink4); }
   textarea.input { resize: vertical; line-height: 1.7; min-height: 90px; }
 
-  .autocomplete { border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 18px; }
+  .autocomplete { border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 18px; }
   .ac-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
   .ac-item:last-child { border-bottom: none; }
   .ac-item:hover { background: var(--cyan-dim); }
-  .ac-title { font-size: 13px; color: var(--ink); font-family: 'DM Serif Display', serif; }
-  .ac-author { font-size: 11px; color: var(--ink3); margin-top: 1px; }
+  .ac-title { font-size: 14px; color: var(--ink); font-family: 'Playfair Display', Georgia, serif; }
+  .ac-author { font-size: 12px; color: var(--ink3); margin-top: 1px; font-family: 'Inter', sans-serif; }
 
-  .taste-profile { background: linear-gradient(135deg, #e0f7fc, #f0fdf4); border: 1.5px solid var(--cyan-mid); border-radius: 8px; padding: 18px; margin-bottom: 22px; position: relative; overflow: hidden; }
-  .taste-profile::before { content: '◈'; position: absolute; right: 14px; top: 12px; font-size: 28px; color: var(--cyan); opacity: 0.15; }
+  .taste-profile { background: linear-gradient(135deg, var(--linen), rgba(61,107,79,0.08)); border: 1.5px solid var(--border2); border-radius: 10px; padding: 18px; margin-bottom: 22px; position: relative; overflow: hidden; }
+  .taste-profile::before { content: '📚'; position: absolute; right: 14px; top: 12px; font-size: 24px; opacity: 0.25; }
   .rec-card { background: transparent; border: none; border-top: 1.5px solid var(--border); padding: 16px 0; margin-bottom: 0; transition: none; }
   .rec-card:first-of-type { border-top: none; }
   .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-  .match-badge { background: linear-gradient(135deg, var(--cyan), #0096c7); color: #fff; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 3px; flex-shrink: 0; margin-left: 12px; letter-spacing: 0.06em; }
-  .rec-reason { font-size: 12px; color: var(--ink3); line-height: 1.7; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; }
+  .match-badge { background: var(--forest); color: var(--linen); font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 10px; flex-shrink: 0; margin-left: 12px; letter-spacing: 0.04em; font-family: 'Inter', sans-serif; }
+  .rec-reason { font-size: 13px; color: var(--ink3); line-height: 1.7; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; font-family: 'Inter', sans-serif; }
 
   .spinner { width: 36px; height: 36px; border: 2.5px solid var(--border); border-top-color: var(--cyan); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 14px; }
   @keyframes spin { to { transform: rotate(360deg) } }
 
   .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
   .bar-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
-  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
-  .bar-fill.amber { background: linear-gradient(90deg, var(--amber), #fbbf24); }
+  .bar-fill { height: 100%; background: var(--forest); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
+  .bar-fill.amber { background: var(--amber); }
 
   .empty { text-align: center; padding: 80px 0; color: var(--ink4); }
   .empty-icon { font-size: 52px; margin-bottom: 16px; }
-  .empty-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink3); margin-bottom: 8px; }
+  .empty-title { font-family: 'Playfair Display', Georgia, serif; font-size: 22px; color: var(--ink3); margin-bottom: 8px; }
 
   .onboarding { max-width: 520px; margin: 60px auto; text-align: center; padding: 0 16px; }
-  .onboarding-title { font-family: 'DM Serif Display', serif; font-size: 42px; color: var(--ink); line-height: 1.15; margin-bottom: 14px; }
-  .onboarding-sub { font-size: 14px; color: var(--ink3); line-height: 1.8; margin-bottom: 36px; max-width: 380px; margin-left: auto; margin-right: auto; }
+  .onboarding-title { font-family: 'Playfair Display', Georgia, serif; font-size: 42px; font-weight: 700; color: var(--ink); line-height: 1.15; margin-bottom: 14px; }
+  .onboarding-sub { font-size: 15px; color: var(--ink3); line-height: 1.8; margin-bottom: 36px; max-width: 380px; margin-left: auto; margin-right: auto; font-family: 'Inter', sans-serif; }
   .onboarding-features { display: flex; justify-content: center; gap: 12px; margin-bottom: 36px; flex-wrap: wrap; }
-  .onboarding-feature { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 16px 18px; width: 140px; }
+  .onboarding-feature { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; width: 140px; box-shadow: 0 1px 4px rgba(28,20,16,0.08); }
   .onboarding-feature-icon { font-size: 22px; margin-bottom: 8px; }
-  .onboarding-feature-label { font-size: 11px; font-weight: 700; color: var(--ink2); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
-  .onboarding-feature-desc { font-size: 11px; color: var(--ink4); line-height: 1.6; }
+  .onboarding-feature-label { font-size: 11px; font-weight: 600; color: var(--ink2); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; font-family: 'Inter', sans-serif; }
+  .onboarding-feature-desc { font-size: 11px; color: var(--ink4); line-height: 1.6; font-family: 'Inter', sans-serif; }
   .onboarding-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
   @media (max-width: 640px) {
     .onboarding-title { font-size: 32px; }
     .onboarding-feature { width: 120px; padding: 14px 12px; }
   }
 
-  .tier-bar-wrap { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 18px 22px; margin-top: 16px; }
+  .tier-bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; margin-top: 16px; }
   .tier-progress { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; border: 1px solid var(--border); margin-top: 10px; }
   .tier-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
 
   .year-filter { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
-  .year-btn { background: none; border: 1.5px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 5px 12px; cursor: pointer; color: var(--ink3); transition: all 0.15s; text-transform: uppercase; }
+  .year-btn { background: none; border: 1.5px solid var(--border); border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; padding: 5px 14px; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
   .year-btn:hover { border-color: var(--cyan); color: var(--cyan); }
-  .year-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .year-btn.active { background: var(--ink); color: var(--linen); border-color: var(--ink); }
 
-  .toread-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-  .toread-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: all 0.18s; }
-  .toread-card:hover { border-color: var(--cyan-mid); box-shadow: 0 4px 16px rgba(0,180,216,0.1); }
+  .toread-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+  .toread-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; position: relative; transition: all 0.18s; box-shadow: 0 1px 4px rgba(28,20,16,0.08); }
+  .toread-card:hover { border-color: var(--cyan-mid); box-shadow: 0 4px 16px rgba(164,119,100,0.15); transform: translateY(-2px); }
   .toread-cover { width: 100%; height: 120px; border-radius: 6px; overflow: hidden; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 36px; }
   .toread-cover img { width: 100%; height: 100%; object-fit: cover; }
   .toread-remove { position: absolute; top: 8px; right: 8px; background: none; border: none; color: var(--ink4); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 5px; border-radius: 3px; }
-  .toread-remove:hover { color: var(--red); background: #fef2f2; }
+  .toread-remove:hover { color: var(--red); background: rgba(196,91,91,0.1); }
 
-  .import-drop { border: 2px dashed var(--border2); border-radius: 10px; padding: 36px 20px; text-align: center; cursor: pointer; margin-bottom: 16px; transition: border-color 0.15s; }
+  .import-drop { border: 2px dashed var(--border2); border-radius: 12px; padding: 36px 20px; text-align: center; cursor: pointer; margin-bottom: 16px; transition: border-color 0.15s; }
   .import-drop:hover { border-color: var(--cyan); }
 
   .filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-  .filter-chip { background: none; border: 1.5px solid var(--border); border-radius: 20px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; padding: 4px 12px; cursor: pointer; color: var(--ink3); transition: all 0.15s; text-transform: uppercase; white-space: nowrap; }
+  .filter-chip { background: none; border: 1.5px solid var(--border); border-radius: 20px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; padding: 4px 14px; cursor: pointer; color: var(--ink3); transition: all 0.15s; white-space: nowrap; }
   .filter-chip:hover { border-color: var(--cyan); color: var(--cyan); }
-  .filter-chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .sort-select { background: var(--surface); border: 1.5px solid var(--border); border-radius: 5px; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600; color: var(--ink3); padding: 5px 10px; cursor: pointer; outline: none; appearance: none; padding-right: 24px; }
-  .goal-bar-wrap { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px; }
+  .filter-chip.active { background: var(--ink); color: var(--linen); border-color: var(--ink); }
+  .sort-select { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; color: var(--ink3); padding: 6px 12px; cursor: pointer; outline: none; appearance: none; }
+  .goal-bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px; box-shadow: 0 1px 4px rgba(28,20,16,0.06); }
   .goal-track { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
-  .goal-fill { height: 100%; background: linear-gradient(90deg, var(--cyan), var(--cyan-mid)); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
-  .dup-warning { background: #fffbeb; border: 1.5px solid #fbbf24; border-radius: 6px; padding: 10px 14px; font-size: 11px; color: #92400e; margin-bottom: 14px; }
-  .series-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  .goal-fill { height: 100%; background: var(--forest); border-radius: 4px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
+  .dup-warning { background: rgba(196,113,74,0.1); border: 1.5px solid rgba(196,113,74,0.35); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--ink2); margin-bottom: 14px; font-family: 'Inter', sans-serif; }
+  .series-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; font-family: 'Inter', sans-serif; }
   .series-item:last-child { border-bottom: none; }
-  .series-item:hover { background: var(--surface); }
+  .series-item:hover { background: var(--cyan-dim); }
   .series-item.excluded { opacity: 0.45; }
 
-  .dnf-badge { font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink4); background: var(--bg); border: 1.5px solid var(--border2); padding: 2px 8px; border-radius: 2px; }
-  .status-toggle { display: flex; border: 1.5px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 18px; }
-  .status-btn { flex: 1; background: none; border: none; padding: 9px 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
-  .status-btn.active-read { background: var(--cyan); color: #fff; }
+  .dnf-badge { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink4); background: var(--bg); border: 1.5px solid var(--border2); padding: 2px 8px; border-radius: 10px; font-family: 'Inter', sans-serif; }
+  .status-toggle { display: flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 18px; }
+  .status-btn { flex: 1; background: none; border: none; padding: 9px 0; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; color: var(--ink3); transition: all 0.15s; }
+  .status-btn.active-read { background: var(--cyan); color: var(--linen); }
   .status-btn.active-dnf { background: var(--ink3); color: #fff; }
 
   @media (max-width: 640px) {
@@ -202,14 +197,14 @@ const CSS = `
     .stat-cell:nth-child(2) { border-right: none; }
     .stat-cell:nth-child(3) { border-top: 1px solid var(--border); }
     .stat-cell:nth-child(4) { border-top: 1px solid var(--border); border-right: none; }
-    .header { height: auto; min-height: 58px; padding: 10px 16px; flex-wrap: wrap; row-gap: 8px; }
+    .header { height: auto; min-height: 60px; padding: 10px 16px; flex-wrap: wrap; row-gap: 8px; }
     .search-row { flex-wrap: wrap; }
     .search-row .search-input { max-width: none !important; flex: 1 0 100%; }
     .filter-row { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; -webkit-mask-image: linear-gradient(to right, black 85%, transparent 100%); mask-image: linear-gradient(to right, black 85%, transparent 100%); }
     .modal { padding: 22px 18px; }
   }
 
-  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 22px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; z-index: 9999; pointer-events: none; animation: toast-in 0.2s ease; }
+  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--linen); padding: 10px 22px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; z-index: 9999; pointer-events: none; animation: toast-in 0.2s ease; }
   @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 `;
 
@@ -323,8 +318,8 @@ function BookCard({ book, onClick, onDelete, onRate }) {
       <div style={{ position: "absolute", bottom: 10, right: 10 }} onClick={e => e.stopPropagation()}>
         {confirming ? (
           <div style={{ display: "flex", gap: 4 }}>
-            <button onClick={() => onDelete(book.id)} style={{ fontSize: 10, padding: "3px 8px", background: "var(--red)", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>Yes</button>
-            <button onClick={() => setConfirming(false)} style={{ fontSize: 10, padding: "3px 8px", background: "var(--bg)", color: "var(--ink3)", border: "1px solid var(--border)", borderRadius: 3, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace" }}>No</button>
+            <button onClick={() => onDelete(book.id)} style={{ fontSize: 10, padding: "3px 8px", background: "var(--red)", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontFamily: "'Inter', sans-serif", fontWeight: 700 }}>Yes</button>
+            <button onClick={() => setConfirming(false)} style={{ fontSize: 10, padding: "3px 8px", background: "var(--bg)", color: "var(--ink3)", border: "1px solid var(--border)", borderRadius: 3, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>No</button>
           </div>
         ) : (
           <button onClick={() => setConfirming(true)} style={{ fontSize: 13, padding: "2px 7px", background: "none", color: "var(--ink4)", border: "1px solid transparent", borderRadius: 3, cursor: "pointer", lineHeight: 1 }} title="Remove book">✕</button>
@@ -487,7 +482,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
                   {prefill.cover ? <img src={prefill.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
                 </div>
                 <div>
-                  <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{prefill.title}</div>
+                  <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 15, color: "var(--ink)", lineHeight: 1.3 }}>{prefill.title}</div>
                   <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{prefill.author}</div>
                 </div>
               </div>
@@ -501,7 +496,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
             </div>
             <div className="field">
               <label className="label">Your Rating <span style={{ color: "var(--ink4)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
-              <Stars rating={rating} interactive onChange={setRating} />
+              <div className="stars-lg"><Stars rating={rating} interactive onChange={setRating} /></div>
             </div>
             <div className="field">
               <label className="label">Personal Notes</label>
@@ -545,7 +540,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
                           {b.include && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "'DM Serif Display', serif" }}>{b.title}</div>
+                          <div style={{ fontSize: 13, color: "var(--ink)", fontFamily: "'Playfair Display', Georgia, serif" }}>{b.title}</div>
                           {b.year && <div style={{ fontSize: 10, color: "var(--ink4)" }}>{b.year}</div>}
                         </div>
                         {existingTitles.has(b.title.toLowerCase()) && (
@@ -584,9 +579,9 @@ function DetailModal({ book, onClose, onUpdate }) {
             {book.cover ? <img src={book.cover} alt="" /> : "📖"}
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, color: "var(--ink)", marginBottom: 4, lineHeight: 1.3 }}>{book.title}</div>
+            <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 20, color: "var(--ink)", marginBottom: 4, lineHeight: 1.3 }}>{book.title}</div>
             <div style={{ fontSize: 12, color: "var(--ink3)", marginBottom: 12 }}>{book.author}</div>
-            <Stars rating={rating} interactive onChange={setRating} />
+            <div className="stars-lg"><Stars rating={rating} interactive onChange={setRating} /></div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
               {[book.genre, book.pages && `${book.pages}pp`, book.dateRead].filter(Boolean).map((t,i) => (
                 <span key={i} style={{ fontSize: 10, padding: "2px 9px", background: "var(--cyan-dim)", color: "var(--cyan)", borderRadius: 3, fontWeight: 600, letterSpacing: "0.06em" }}>{t}</span>
@@ -602,7 +597,7 @@ function DetailModal({ book, onClose, onUpdate }) {
           value={notes}
           onChange={e => setNotes(e.target.value)}
           placeholder="Add your notes…"
-          style={{ width: "100%", minHeight: 90, background: "var(--bg)", border: "1.5px solid var(--border)", borderLeft: "3px solid var(--cyan)", borderRadius: "0 6px 6px 0", padding: 12, fontSize: 13, color: "var(--ink2)", fontFamily: "'JetBrains Mono', monospace", resize: "vertical", outline: "none", lineHeight: 1.8, boxSizing: "border-box" }}
+          style={{ width: "100%", minHeight: 90, background: "var(--bg)", border: "1.5px solid var(--border)", borderLeft: "3px solid var(--cyan)", borderRadius: "0 6px 6px 0", padding: 12, fontSize: 13, color: "var(--ink2)", fontFamily: "'Inter', sans-serif", resize: "vertical", outline: "none", lineHeight: 1.8, boxSizing: "border-box" }}
         />
         <button className="btn-primary" style={{ width: "100%", marginTop: 12, padding: "10px 0" }} onClick={save}>Save</button>
         <button className="btn-ghost" style={{ width: "100%", marginTop: 8, padding: "10px 0" }} onClick={onClose}>Close</button>
@@ -803,18 +798,18 @@ Respond ONLY with valid JSON (no markdown):
                   <>
                     <div className="rec-header">
                       <div>
-                        <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 17, color: "var(--ink)" }}>{rec.title}</div>
+                        <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 17, color: "var(--ink)" }}>{rec.title}</div>
                         <div style={{ fontSize: 12, color: "var(--ink3)", marginTop: 2 }}>{rec.author}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                         <div className="match-badge">{rec.match}% match</div>
                         <button
                           onClick={() => !rec.added && markRead(i)}
-                          style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: rec.added ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap", opacity: rec.added ? 0.6 : 1 }}
+                          style={{ fontSize: 10, padding: "3px 10px", background: "var(--cyan-dim)", color: "var(--cyan)", border: "1px solid var(--cyan-mid)", borderRadius: 3, cursor: rec.added ? "default" : "pointer", fontFamily: "'Inter', sans-serif", fontWeight: 600, whiteSpace: "nowrap", opacity: rec.added ? 0.6 : 1 }}
                         >{rec.added ? "✓ Added" : "✓ Already Read"}</button>
                         <button
                           onClick={() => saveToRead(i)}
-                          style={{ fontSize: 10, padding: "3px 10px", background: rec.saved ? "#f0fdf4" : "var(--bg)", color: rec.saved ? "#16a34a" : "var(--ink3)", border: `1px solid ${rec.saved ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: rec.saved ? "default" : "pointer", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, whiteSpace: "nowrap" }}
+                          style={{ fontSize: 10, padding: "3px 10px", background: rec.saved ? "#f0fdf4" : "var(--bg)", color: rec.saved ? "#16a34a" : "var(--ink3)", border: `1px solid ${rec.saved ? "#86efac" : "var(--border)"}`, borderRadius: 3, cursor: rec.saved ? "default" : "pointer", fontFamily: "'Inter', sans-serif", fontWeight: 600, whiteSpace: "nowrap" }}
                         >＋ To Read</button>
                       </div>
                     </div>
@@ -989,7 +984,7 @@ function ScanModal({ onClose, onAddMultiple, existingBooks = [] }) {
                     {b.cover ? <img src={b.cover} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "📖"}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
+                    <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 14, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
                     <div style={{ fontSize: 11, color: "var(--ink3)", marginTop: 2 }}>{b.author || "Unknown"}</div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 3 }}>
                       <div style={{ fontSize: 10, color: "var(--cyan)", fontWeight: 600, letterSpacing: "0.06em" }}>{b.genre || "General"}</div>
@@ -1285,7 +1280,7 @@ function ImportCSVModal({ onClose, onAddMultiple, onAddToRead, existingBooks = [
         {stage === "review" && (
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: formatColor, color: csvFormat === "amazon" ? "#000" : "#fff", textTransform: "uppercase" }}>{formatLabel}</span>
+              <span style={{ fontSize: 10, fontFamily: "'Inter', sans-serif", fontWeight: 700, letterSpacing: "0.08em", padding: "3px 8px", borderRadius: 4, background: formatColor, color: csvFormat === "amazon" ? "#000" : "#fff", textTransform: "uppercase" }}>{formatLabel}</span>
               <span style={{ fontSize: 12, color: "var(--ink3)" }}>Found <strong>{parsed.length} book{parsed.length !== 1 ? "s" : ""}</strong>. Uncheck any to skip.</span>
             </div>
             {csvFormat === "amazon" && (
@@ -1305,7 +1300,7 @@ function ImportCSVModal({ onClose, onAddMultiple, onAddToRead, existingBooks = [
                     {b.include && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
+                    <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 13, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
                     <div style={{ fontSize: 10, color: "var(--ink3)" }}>
                       {b.author !== "Unknown" ? b.author : <em style={{ color: "var(--ink4)" }}>author via OpenLibrary</em>}
                       {b.rating ? ` · ${"★".repeat(Math.floor(b.rating))}${b.rating % 1 ? "½" : ""}` : ""}
@@ -1340,7 +1335,7 @@ function ImportCSVModal({ onClose, onAddMultiple, onAddToRead, existingBooks = [
           <>
             <div style={{ textAlign: "center", padding: "12px 0 24px" }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
-              <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: "var(--ink)", marginBottom: 20 }}>Import Complete</div>
+              <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 22, color: "var(--ink)", marginBottom: 20 }}>Import Complete</div>
               <div style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 2.2, textAlign: "left", display: "inline-block" }}>
                 {summary.imported > 0 && <div>📖 <strong>{summary.imported}</strong> book{summary.imported !== 1 ? "s" : ""} added to your shelf</div>}
                 {summary.toRead > 0 && <div>📋 <strong>{summary.toRead}</strong> book{summary.toRead !== 1 ? "s" : ""} added to your To Read list</div>}
@@ -1652,16 +1647,11 @@ export default function App() {
   return (
     <>
       <style>{CSS}</style>
-      <div className="scanlines" />
-      <div className="grid-bg" />
-      <div className="orbit-ring" style={{ width: 600, height: 600, right: -200, top: -200 }} />
-      <div className="orbit-ring" style={{ width: 400, height: 400, right: -100, top: -50, opacity: 0.5 }} />
 
-      <div style={{ position: "relative", zIndex: 2 }}>
+      <div style={{ position: "relative" }}>
         <header className="header">
           <div className="logo">
-            <span className="logo-word">Shelf</span>
-            <span className="logo-badge">AI</span>
+            <span className="logo-word">my<span>-shelf</span></span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div className="nav-pill">
@@ -1724,7 +1714,7 @@ export default function App() {
                   </div>
                   {readingGoal === 0 && !editingGoal && books.length >= 3 && (
                     <div style={{ fontSize: 11, color: "var(--ink4)", marginBottom: 12 }}>
-                      <button onClick={() => { setGoalInput(""); setEditingGoal(true); }} style={{ background: "none", border: "none", color: "var(--cyan)", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: 0, textDecoration: "underline" }}>Set a {thisYear} reading goal</button>
+                      <button onClick={() => { setGoalInput(""); setEditingGoal(true); }} style={{ background: "none", border: "none", color: "var(--cyan)", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 11, padding: 0, textDecoration: "underline" }}>Set a {thisYear} reading goal</button>
                     </div>
                   )}
                   {readingGoal > 0 && (
@@ -1738,7 +1728,7 @@ export default function App() {
                       <div style={{ fontSize: 12, color: thisYearBooks.length >= readingGoal ? "#16a34a" : "var(--ink3)", whiteSpace: "nowrap", fontWeight: 600 }}>
                         {thisYearBooks.length} / {readingGoal}{thisYearBooks.length >= readingGoal ? " 🎉" : ""}
                       </div>
-                      <button onClick={() => { setGoalInput(String(readingGoal)); setEditingGoal(true); }} style={{ fontSize: 10, padding: "3px 8px", background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", color: "var(--ink4)", fontFamily: "'JetBrains Mono', monospace" }}>edit</button>
+                      <button onClick={() => { setGoalInput(String(readingGoal)); setEditingGoal(true); }} style={{ fontSize: 10, padding: "3px 8px", background: "none", border: "1px solid var(--border)", borderRadius: 4, cursor: "pointer", color: "var(--ink4)", fontFamily: "'Inter', sans-serif" }}>edit</button>
                     </div>
                   )}
                   {editingGoal && (
@@ -1940,7 +1930,7 @@ export default function App() {
                           {b.cover ? <img src={b.cover} alt="" onError={e => { e.target.style.display="none"; e.target.parentNode.textContent="📖"; }} /> : "📖"}
                         </div>
                         <div>
-                          <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 14, color: "var(--ink)", lineHeight: 1.3, marginBottom: 2 }}>{b.title}</div>
+                          <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 14, color: "var(--ink)", lineHeight: 1.3, marginBottom: 2 }}>{b.title}</div>
                           <div style={{ fontSize: 11, color: "var(--ink3)" }}>{b.author}</div>
                         </div>
                         <button
