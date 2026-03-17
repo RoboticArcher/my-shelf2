@@ -423,15 +423,19 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
     const toAdd = seriesBooks.filter(b => b.include);
     if (!toAdd.length) return;
     setAddingAll(true);
-    const now = Date.now();
-    const newBooks = await Promise.all(toAdd.map(async (b, i) => {
-      let meta = { cover: null, pages: null, author: seriesInfo.author, genre: "Fiction" };
-      try { meta = await fetchBookMeta(b.title, seriesInfo.author); } catch {}
-      return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: null, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" };
-    }));
-    const existing = new Set(existingBooks.map(b => b.title.toLowerCase()));
-    const fresh = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
-    if (fresh.length) onAddMultiple(fresh);
+    try {
+      const now = Date.now();
+      const newBooks = await Promise.all(toAdd.map(async (b, i) => {
+        let meta = { cover: null, pages: null, author: seriesInfo.author, genre: "Fiction" };
+        try { meta = await fetchBookMeta(b.title, seriesInfo.author); } catch {}
+        return { id: now + i, title: b.title, author: seriesInfo.author || meta.author || "Unknown", cover: meta.cover || null, rating: null, notes: "", genre: meta.genre || "Fiction", pages: meta.pages || null, dateRead: new Date().toISOString().slice(0,7), status: "read" };
+      }));
+      const existing = new Set(existingBooks.map(b => b.title.toLowerCase()));
+      const fresh = newBooks.filter(b => !existing.has(b.title.toLowerCase()));
+      if (fresh.length) onAddMultiple(fresh);
+    } finally {
+      setAddingAll(false);
+    }
   };
 
   const existingTitles = new Set(existingBooks.map(b => b.title.toLowerCase()));
@@ -1636,7 +1640,12 @@ export default function App() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalInput, setGoalInput] = useState("");
   const [toast, setToast] = useState(null);
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  const toastTimer = useRef(null);
+  const showToast = (msg) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => { setToast(null); toastTimer.current = null; }, 2500);
+  };
   const [quizData, setQuizData] = useState(() => {
     try { return JSON.parse(localStorage.getItem("shelf-quiz")); } catch { return null; }
   });
