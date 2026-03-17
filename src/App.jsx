@@ -1352,6 +1352,67 @@ function ImportCSVModal({ onClose, onAddMultiple, onAddToRead, existingBooks = [
   );
 }
 
+// ── TO READ LINKS MODAL ────────────────────────────────────────────
+function ToReadLinksModal({ book, onClose, onMarkRead }) {
+  const isbn = book.isbn;
+  const bookshopUrl = isbn
+    ? `https://bookshop.org/search?keywords=${encodeURIComponent(isbn)}`
+    : `https://bookshop.org/search?keywords=${encodeURIComponent(book.title + " " + book.author)}`;
+  const indieUrl = isbn
+    ? `https://www.indiebound.org/book/${isbn}`
+    : `https://www.indiebound.org/search/book?keys=${encodeURIComponent(book.title + " " + book.author)}`;
+
+  return (
+    <div className="backdrop" onClick={onClose}>
+      <div className="modal" style={{ width: "min(380px, 94vw)" }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title" style={{ fontSize: 20 }}>{book.title}</div>
+            {book.author && <div className="modal-sub" style={{ marginTop: 4 }}>{book.author}</div>}
+          </div>
+          <button className="close-btn" onClick={onClose}>✕</button>
+        </div>
+
+        {book.cover && (
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+            <img src={book.cover} alt="" style={{ width: 80, borderRadius: 6, boxShadow: "0 2px 10px rgba(28,20,16,0.2)" }} />
+          </div>
+        )}
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ink4)", letterSpacing: "0.16em", textTransform: "uppercase", marginBottom: 10 }}>
+          Where to Get It
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          <a
+            href={bookshopUrl} target="_blank" rel="noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "var(--cyan-dim)", border: "1.5px solid var(--cyan-mid)", borderRadius: 8, color: "var(--cyan)", fontSize: 13, fontWeight: 600, textDecoration: "none" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--cyan)"; e.currentTarget.style.color = "var(--linen)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "var(--cyan-dim)"; e.currentTarget.style.color = "var(--cyan)"; }}
+          >
+            <span>🏪</span>
+            <span style={{ flex: 1 }}>Buy from Bookshop.org</span>
+            <span style={{ fontSize: 11, opacity: 0.7 }}>↗</span>
+          </a>
+          <a
+            href={indieUrl} target="_blank" rel="noreferrer"
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: "var(--bg)", border: "1.5px solid var(--border)", borderRadius: 8, color: "var(--ink3)", fontSize: 13, fontWeight: 600, textDecoration: "none" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--cyan)"; e.currentTarget.style.color = "var(--cyan)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--ink3)"; }}
+          >
+            <span>📍</span>
+            <span style={{ flex: 1 }}>Find at IndieBound</span>
+            <span style={{ fontSize: 11, opacity: 0.7 }}>↗</span>
+          </a>
+        </div>
+
+        <button className="btn-ghost" style={{ width: "100%" }} onClick={onMarkRead}>
+          ✓ Mark as Read
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── ADD TO READ MODAL ──────────────────────────────────────────────
 function AddToReadModal({ onClose, onAdd }) {
   const [query, setQuery] = useState("");
@@ -1924,8 +1985,8 @@ export default function App() {
               ) : (
                 <div className="toread-grid">
                   {toRead.map(b => (
-                      <div key={b.id} className="toread-card">
-                        <button className="toread-remove" onClick={() => setToRead(p => p.filter(x => x.id !== b.id))} title="Remove">✕</button>
+                      <div key={b.id} className="toread-card" onClick={() => setModal({ ...b, toReadLinks: true })} style={{ cursor: "pointer" }}>
+                        <button className="toread-remove" onClick={e => { e.stopPropagation(); setToRead(p => p.filter(x => x.id !== b.id)); }} title="Remove">✕</button>
                         <div className="toread-cover">
                           {b.cover ? <img src={b.cover} alt="" onError={e => { e.target.style.display="none"; e.target.parentNode.textContent="📖"; }} /> : "📖"}
                         </div>
@@ -1936,7 +1997,7 @@ export default function App() {
                         <button
                           className="btn-ghost"
                           style={{ width: "100%", padding: "6px 0", fontSize: 10, marginTop: "auto" }}
-                          onClick={() => setModal({ ...b, markAsRead: true })}
+                          onClick={e => { e.stopPropagation(); setModal({ ...b, markAsRead: true }); }}
                         >Mark as Read</button>
                       </div>
                   ))}
@@ -1954,6 +2015,7 @@ export default function App() {
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} existingToRead={toRead} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} onAddToRead={newToRead => setToRead(p => [...newToRead, ...p])} />}
       {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} showToast={showToast} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
+      {modal?.toReadLinks && <ToReadLinksModal book={modal} onClose={() => setModal(null)} onMarkRead={() => setModal({ ...modal, toReadLinks: false, markAsRead: true })} />}
       {modal?.markAsRead && (
         <AddModal
           onClose={() => setModal(null)}
