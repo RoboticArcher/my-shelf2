@@ -1651,7 +1651,7 @@ export default function App() {
       <div style={{ position: "relative" }}>
         <header className="header">
           <div className="logo">
-            <span className="logo-word">my<span>-shelf</span></span>
+            <span className="logo-word">My Shelf <span>AI</span></span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div className="nav-pill">
