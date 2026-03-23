@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 
-// Module-level recs cache — persists while tab is open, auto-invalidates when shelf or To Read list changes
-let recsCache = null; // { tasteProfile, recs, bookCount, toReadCount }
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
@@ -387,6 +385,7 @@ function AddModal({ onClose, onAdd, onAddMultiple, prefill, existingBooks = [] }
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
+    return () => clearTimeout(timer.current);
   }, [query]);
 
   const selectBook = (r) => {
@@ -659,7 +658,7 @@ function DetailModal({ book, onClose, onUpdate }) {
 }
 
 // ── RECS MODAL ─────────────────────────────────────────────────────
-function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead, showToast }) {
+function RecsModal({ books, onClose, onAdd, quizData, toRead, setToRead, showToast, recsCache }) {
   const [tasteProfile, setTasteProfile] = useState(null);
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -702,9 +701,9 @@ Respond ONLY with valid JSON (no markdown):
   };
 
   const generate = async (useCache = false) => {
-    if (useCache && recsCache && recsCache.bookCount === books.length && recsCache.toReadCount === toRead.length && recsCache.recs.length > 0) {
-      setTasteProfile(recsCache.tasteProfile);
-      setRecs(recsCache.recs);
+    if (useCache && recsCache.current && recsCache.current.bookCount === books.length && recsCache.current.toReadCount === toRead.length && recsCache.current.recs.length > 0) {
+      setTasteProfile(recsCache.current.tasteProfile);
+      setRecs(recsCache.current.recs);
       return;
     }
     setLoading(true); setError(null); setTasteProfile(null); setRecs([]);
@@ -714,7 +713,7 @@ Respond ONLY with valid JSON (no markdown):
       setTasteProfile(parsed.taste_profile);
       const newRecs = parsed.recommendations.map(r => ({ ...r, replacing: false }));
       setRecs(newRecs);
-      recsCache = { tasteProfile: parsed.taste_profile, recs: newRecs, bookCount: books.length, toReadCount: toRead.length };
+      recsCache.current = { tasteProfile: parsed.taste_profile, recs: newRecs, bookCount: books.length, toReadCount: toRead.length };
     } catch {
       setError("Couldn't reach the AI. Check your API key is set correctly.");
     }
@@ -823,7 +822,7 @@ Respond ONLY with valid JSON (no markdown):
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={() => { recsCache = null; generate(false); }}>Regenerate</button>
+              <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={() => { recsCache.current = null; generate(false); }}>Regenerate</button>
               <button className="btn-ghost" style={{ flex: 1, padding: "10px 0" }} onClick={copyPrompt}>{copied ? "✓ Copied!" : "Copy Prompt"}</button>
             </div>
           </>
@@ -1445,6 +1444,7 @@ function AddToReadModal({ onClose, onAdd }) {
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
+    return () => clearTimeout(timer.current);
   }, [query]);
 
   const select = (r) => {
@@ -1510,6 +1510,7 @@ function BookSearchInput({ value, onChange }) {
       } catch { setResults([]); }
       setLoading(false);
     }, 380);
+    return () => clearTimeout(timer.current);
   }, [query, isSelected]);
 
   const select = (result) => {
@@ -1641,6 +1642,7 @@ export default function App() {
   const [goalInput, setGoalInput] = useState("");
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  const recsCache = useRef(null); // { tasteProfile, recs, bookCount, toReadCount } — persists across modal opens
   const showToast = (msg) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(msg);
@@ -1709,7 +1711,7 @@ export default function App() {
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "my-shelf.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = "my-shelf.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast(`✓ Exported ${books.length} book${books.length !== 1 ? "s" : ""} to my-shelf.csv`);
   };
@@ -2022,7 +2024,7 @@ export default function App() {
       {modal === "add-toread" && <AddToReadModal onClose={() => setModal(null)} onAdd={b => setToRead(p => [b, ...p])} />}
       {modal === "scan" && <ScanModal onClose={() => setModal(null)} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} existingBooks={books} />}
       {modal === "import-csv" && <ImportCSVModal onClose={() => setModal(null)} existingBooks={books} existingToRead={toRead} onAddMultiple={newBooks => setBooks(p => [...newBooks, ...p])} onAddToRead={newToRead => setToRead(p => [...newToRead, ...p])} />}
-      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} showToast={showToast} />}
+      {modal === "rec" && <RecsModal books={books} onClose={() => setModal(null)} onAdd={b => setBooks(p => [b, ...p])} quizData={quizData} toRead={toRead} setToRead={setToRead} showToast={showToast} recsCache={recsCache} />}
       {modal?.id && !modal?.addedAt && <DetailModal book={modal} onClose={() => setModal(null)} onUpdate={b => setBooks(p => p.map(x => x.id === b.id ? b : x))} />}
       {modal?.toReadLinks && <ToReadLinksModal book={modal} onClose={() => setModal(null)} onMarkRead={() => setModal({ ...modal, toReadLinks: false, markAsRead: true })} />}
       {modal?.markAsRead && (
